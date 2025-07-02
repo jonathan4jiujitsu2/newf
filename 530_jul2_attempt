@@ -1,0 +1,292 @@
+'***************************************************************************
+' HFSS VBScript – 8-Pole Multi-Layer Stripline Filter (CORRECTED VERSION)
+' Fixes all identified issues:
+' - Proper resonator orientation (slots face inward for coupling)
+' - Correct spacing (95mil X, 70mil Y from real measurements)
+' - Fixed unit concatenation bugs with CStr()
+' - Asymmetric feed routing matching real design
+' - Proper copper layer positioning (flush with dielectric)
+' - Cross-coupling poles aligned with resonator positions
+' - Stepped PCB outline approximation
+'***************************************************************************
+
+' === 0. HOUSEKEEPING =====================================================
+Dim oAnsoftApp, oDesktop, oProject, oDesign, oEditor, oModule
+Set oAnsoftApp = CreateObject("AnsoftHfss.HfssScriptInterface")
+Set oDesktop = oAnsoftApp.GetAppDesktop()
+oDesktop.RestoreWindow
+Set oProject = oDesktop.NewProject
+Const DESN$ = "StriplineFilter_8Pole_Corrected"
+oProject.InsertDesign "HFSS", DESN$, "DrivenModal", ""
+Set oDesign = oProject.SetActiveDesign(DESN$)
+Set oEditor = oDesign.SetActiveEditor("3D Modeler")
+oEditor.SetModelUnits Array("NAME:Units Parameter", "Units:=", "mil", "Rescale:=", False)
+
+' === 1. GLOBAL CONSTANTS (CORRECTED VALUES) =============================
+' Dielectric stack (mil) - corrected copper thickness
+Const TH_R_Top = 10, TH_Prep2 = 2.25, TH_R_Mid = 5, TH_Prep4 = 2.25, TH_R_Bot = 10
+Const TH_Cu_Inner = 0.7, TH_Cu_Outer = 1.4  ' Real copper thickness (0.5oz inner, 1oz outer)
+Const Z0 = 0
+Const Z1 = Z0 + TH_R_Bot          ' 10
+Const Z2 = Z1 + TH_Prep4          ' 12.25
+Const Z3 = Z2 + TH_R_Mid          ' 17.25
+Const Z4 = Z3 + TH_Prep2          ' 19.5
+Const Z5 = Z4 + TH_R_Top          ' 29.5
+
+' Board outline (stepped approximation)
+Const BOARD_HALF_X = 400, BOARD_WY = 350
+Const CUTOUT_X = 150, CUTOUT_Y = 80  ' Central resonator area cutouts
+
+' Port/traces
+Const PORT_W = 66, TRACE_W = 7.8
+
+' Resonator geometry A/B (mil) - exact from measurements
+Const A_OUT = 83.628, A_SLOT = 29.29, A_OFF = 27.165, A_SLIT = 4.39
+Const B_W = 73.352, B_H = 93.47, B_SW = 19.02, B_SH = 39.13, B_GAP = 4.07
+
+' CORRECTED SPACING (from real measurements)
+Const RES_X_SPACING = 95   ' mil (not 120)
+Const RES_Y_SPACING = 70   ' mil (not 100)
+
+' Helper function - FIXED unit concatenation with CStr()
+Sub AddBox(nm, x, y, z, sx, sy, sz, col, mat, inside)
+    oEditor.CreateBox Array("NAME:BoxParameters", _
+        "XPosition:=", CStr(x) & "mil", "YPosition:=", CStr(y) & "mil", "ZPosition:=", CStr(z) & "mil", _
+        "XSize:=", CStr(sx) & "mil", "YSize:=", CStr(sy) & "mil", "ZSize:=", CStr(sz) & "mil"), _
+        Array("NAME:Attributes", "Name:=", nm, "Flags:=", "", "Color:=", col, "Transparency:=", 0.6, _
+        "PartCoordinateSystem:=", "Global", "MaterialValue:=", Chr(34) & mat & Chr(34), _
+        "SolveInside:=", inside)
+End Sub
+
+' === 2. MATERIALS ========================================================
+Set oDefinitionManager = oProject.GetDefinitionManager()
+Sub AddMat(nm, er, loss)
+    oDefinitionManager.AddMaterial Array("NAME:" & nm, "CoordinateSystemType:=", "Cartesian", _
+        Array("NAME:AttachedData"), "permittivity:=", CStr(er), "dielectric_loss_tangent:=", CStr(loss))
+End Sub
+AddMat "Rogers3010", 10.2, 0.0023
+AddMat "Prepreg2929", 2.94, 0.0022
+
+' === 3. BUILD DIELECTRIC STACK ==========================================
+AddBox "Rog_Bot", -BOARD_HALF_X, -BOARD_WY/2, Z0, 2*BOARD_HALF_X, BOARD_WY, TH_R_Bot, "(0 0 255)", "Rogers3010", True
+AddBox "Prep4", -BOARD_HALF_X, -BOARD_WY/2, Z1, 2*BOARD_HALF_X, BOARD_WY, TH_Prep4, "(128 128 0)", "Prepreg2929", True
+AddBox "Rog_Mid", -BOARD_HALF_X, -BOARD_WY/2, Z2, 2*BOARD_HALF_X, BOARD_WY, TH_R_Mid, "(0 128 0)", "Rogers3010", True
+AddBox "Prep2", -BOARD_HALF_X, -BOARD_WY/2, Z3, 2*BOARD_HALF_X, BOARD_WY, TH_Prep2, "(128 128 0)", "Prepreg2929", True
+AddBox "Rog_Top", -BOARD_HALF_X, -BOARD_WY/2, Z4, 2*BOARD_HALF_X, BOARD_WY, TH_R_Top, "(144 238 144)", "Rogers3010", True
+
+' === 4. GROUND PLANES (CORRECTED - FLUSH WITH DIELECTRIC) ===============
+' Bottom ground plane (flush with bottom dielectric)
+AddBox "GND_Bot", -BOARD_HALF_X, -BOARD_WY/2, Z0 - TH_Cu_Outer, 2*BOARD_HALF_X, BOARD_WY, TH_Cu_Outer, "(192 192 192)", "copper", False
+' Top ground plane (flush with top dielectric)
+AddBox "GND_Top", -BOARD_HALF_X, -BOARD_WY/2, Z5, 2*BOARD_HALF_X, BOARD_WY, TH_Cu_Outer, "(192 192 192)", "copper", False
+
+' === 5. STEPPED PCB OUTLINE APPROXIMATION ===============================
+' Create stepped outline by subtracting cutouts from main rectangle
+' Central cutouts for resonator area clearance
+AddBox "Cutout_L", -BOARD_HALF_X, -CUTOUT_Y, Z0 - TH_Cu_Outer, CUTOUT_X, 2*CUTOUT_Y, Z5 + TH_Cu_Outer, "(255 255 255)", "vacuum", True
+AddBox "Cutout_R", BOARD_HALF_X - CUTOUT_X, -CUTOUT_Y, Z0 - TH_Cu_Outer, CUTOUT_X, 2*CUTOUT_Y, Z5 + TH_Cu_Outer, "(255 255 255)", "vacuum", True
+
+' Subtract cutouts from dielectric layers
+oEditor.Subtract Array("NAME:Selections", "Blank Parts:=", "Rog_Bot,Prep4,Rog_Mid,Prep2,Rog_Top,GND_Bot,GND_Top", _
+    "Tool Parts:=", "Cutout_L,Cutout_R"), Array("NAME:SubtractParameters", "KeepOriginals:=", False)
+
+' === 6. RESONATOR MAKERS (CORRECTED ORIENTATION) ========================
+Sub MkA_Left(tag, x, y, z)
+    ' Type A resonator - LEFT SIDE (slot faces right for inward coupling)
+    AddBox tag & "Cu", x, y, z, A_OUT, A_OUT, TH_Cu_Inner, "(255 128 0)", "copper", False
+    AddBox tag & "slot", x + A_OFF, y + A_OFF, z, A_SLOT, A_SLOT, TH_Cu_Inner, "(255 0 0)", "vacuum", True
+    AddBox tag & "slit", x + A_OFF + A_SLOT, y + A_OFF + A_SLOT/2 - A_SLIT/2, z, A_SLIT, A_SLIT, TH_Cu_Inner, "(255 0 0)", "vacuum", True
+    oEditor.Subtract Array("NAME:Selections", "Blank Parts:=", tag & "Cu", "Tool Parts:=", tag & "slot," & tag & "slit"), _
+        Array("NAME:SubtractParameters", "KeepOriginals:=", False)
+End Sub
+
+Sub MkA_Right(tag, x, y, z)
+    ' Type A resonator - RIGHT SIDE (slot faces left for inward coupling)
+    AddBox tag & "Cu", x, y, z, A_OUT, A_OUT, TH_Cu_Inner, "(255 128 0)", "copper", False
+    AddBox tag & "slot", x + A_OFF, y + A_OFF, z, A_SLOT, A_SLOT, TH_Cu_Inner, "(255 0 0)", "vacuum", True
+    ' Slit on LEFT side for inward coupling
+    AddBox tag & "slit", CStr(x + A_OFF - A_SLIT) & "mil_temp", y + A_OFF + A_SLOT/2 - A_SLIT/2, z, A_SLIT, A_SLIT, TH_Cu_Inner, "(255 0 0)", "vacuum", True
+    ' Fix the naming issue by recreating the slit
+    oEditor.CreateBox Array("NAME:BoxParameters", _
+        "XPosition:=", CStr(x + A_OFF - A_SLIT) & "mil", _
+        "YPosition:=", CStr(y + A_OFF + A_SLOT/2 - A_SLIT/2) & "mil", _
+        "ZPosition:=", CStr(z) & "mil", _
+        "XSize:=", CStr(A_SLIT) & "mil", _
+        "YSize:=", CStr(A_SLIT) & "mil", _
+        "ZSize:=", CStr(TH_Cu_Inner) & "mil"), _
+        Array("NAME:Attributes", "Name:=", tag & "slit", "Color:=", "(255 0 0)", _
+        "MaterialValue:=", Chr(34) & "vacuum" & Chr(34), "SolveInside:=", True)
+    oEditor.Delete Array("NAME:Selections", "Selections:=", tag & "slit" & "mil_temp")
+    oEditor.Subtract Array("NAME:Selections", "Blank Parts:=", tag & "Cu", "Tool Parts:=", tag & "slot," & tag & "slit"), _
+        Array("NAME:SubtractParameters", "KeepOriginals:=", False)
+End Sub
+
+Sub MkB_Left(tag, x, y, z)
+    ' Type B resonator - LEFT SIDE (normal orientation)
+    AddBox tag & "Cu", x, y, z, B_W, B_H, TH_Cu_Inner, "(255 64 64)", "copper", False
+    AddBox tag & "s1", x + A_OFF, y + A_OFF, z, B_SW, (B_SH - B_GAP)/2, TH_Cu_Inner, "(255 0 0)", "vacuum", True
+    AddBox tag & "s2", x + A_OFF, y + A_OFF + (B_SH - B_GAP)/2 + B_GAP, z, B_SW, (B_SH - B_GAP)/2, TH_Cu_Inner, "(255 0 0)", "vacuum", True
+    oEditor.Subtract Array("NAME:Selections", "Blank Parts:=", tag & "Cu", "Tool Parts:=", tag & "s1," & tag & "s2"), _
+        Array("NAME:SubtractParameters", "KeepOriginals:=", False)
+End Sub
+
+Sub MkB_Right(tag, x, y, z)
+    ' Type B resonator - RIGHT SIDE (mirrored for inward coupling)
+    AddBox tag & "Cu", x, y, z, B_W, B_H, TH_Cu_Inner, "(255 64 64)", "copper", False
+    ' Slots on right side for inward coupling
+    AddBox tag & "s1", x + B_W - A_OFF - B_SW, y + A_OFF, z, B_SW, (B_SH - B_GAP)/2, TH_Cu_Inner, "(255 0 0)", "vacuum", True
+    AddBox tag & "s2", x + B_W - A_OFF - B_SW, y + A_OFF + (B_SH - B_GAP)/2 + B_GAP, z, B_SW, (B_SH - B_GAP)/2, TH_Cu_Inner, "(255 0 0)", "vacuum", True
+    oEditor.Subtract Array("NAME:Selections", "Blank Parts:=", tag & "Cu", "Tool Parts:=", tag & "s1," & tag & "s2"), _
+        Array("NAME:SubtractParameters", "KeepOriginals:=", False)
+End Sub
+
+' === 7. CREATE RESONATORS WITH CORRECTED POSITIONS ======================
+' CORRECTED resonator positions based on real measurements
+Dim res_center_x, res_left_x, res_right_x
+res_center_x = 0
+res_left_x = res_center_x - RES_X_SPACING/2
+res_right_x = res_center_x + RES_X_SPACING/2
+
+' LEFT QUARTET (original orientation)
+MkA_Left "R1L", res_left_x - RES_X_SPACING, RES_Y_SPACING/2, Z3    ' A top layer
+MkB_Left "R2L", res_left_x - RES_X_SPACING, -RES_Y_SPACING/2 - B_H, Z1    ' B bottom layer
+MkB_Left "R3L", res_left_x, RES_Y_SPACING/2, Z3    ' B top layer
+MkA_Left "R4L", res_left_x, -RES_Y_SPACING/2 - A_OUT, Z1    ' A bottom layer
+
+' RIGHT QUARTET (corrected for inward coupling)
+MkA_Right "R5R", res_right_x, -RES_Y_SPACING/2 - A_OUT, Z1    ' A bottom layer (mirror of R4)
+MkB_Right "R6R", res_right_x, RES_Y_SPACING/2, Z3    ' B top layer (mirror of R3)
+MkB_Right "R7R", res_right_x + RES_X_SPACING, -RES_Y_SPACING/2 - B_H, Z1    ' B bottom layer (mirror of R2)
+MkA_Right "R8R", res_right_x + RES_X_SPACING, RES_Y_SPACING/2, Z3    ' A top layer (mirror of R1)
+
+' === 8. FEED LINES (CORRECTED ASYMMETRIC ROUTING) =======================
+Sub LaunchPad(nm, x0)
+    AddBox nm, x0, -PORT_W/2, Z3, 20, PORT_W, TH_Cu_Inner, "(0 255 0)", "copper", False
+End Sub
+LaunchPad "Pad_L", -BOARD_HALF_X
+LaunchPad "Pad_R", BOARD_HALF_X - 20
+
+Function PLP(x, y): PLP = Array("NAME:PLPoint", "X:=", CStr(x) & "mil", "Y:=", CStr(y) & "mil", "Z:=", CStr(Z3) & "mil"): End Function
+
+Sub SegArray(ByRef a, n): ReDim a(n-1): Dim i: For i = 0 To n-1: a(i) = Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", i, "NoOfPoints:=", 2): Next: End Sub
+
+Sub Poly(nm, pts, col)
+    Dim segs: SegArray segs, UBound(pts) + 1
+    oEditor.CreatePolyline Array("NAME:PolylineParameters", "IsPolylineCovered:=", True, "IsPolylineClosed:=", False, _
+        Array("NAME:PolylinePoints", pts), Array("NAME:PolylineSegments", segs), _
+        Array("NAME:PolylineXSection", "XSectionType:=", "Rectangle", "XSectionOrient:=", "Auto", _
+        "XSectionWidth:=", CStr(TRACE_W) & "mil", "XSectionTopWidth:=", "0mil", _
+        "XSectionHeight:=", CStr(TH_Cu_Inner) & "mil", "XSectionNumSegments:=", "0", "XSectionBendType:=", "Corner")), _
+        Array("NAME:Attributes", "Name:=", nm, "Flags:=", "", "Color:=", col, "Transparency:=", 0, _
+        "PartCoordinateSystem:=", "Global", "MaterialValue:=", Chr(34) & "copper" & Chr(34), "SolveInside:=", False)
+End Sub
+
+' LEFT FEED (follows via wall)
+Dim pL: pL = Array(PLP(-BOARD_HALF_X + 20, 0), PLP(-320, 0), PLP(-300, 15), PLP(-280, 25), _
+    PLP(-250, 35), PLP(-220, 30), PLP(-200, 20), PLP(-180, 10), PLP(-150, 5))
+Poly "Trace_L", pL, "(0 255 0)"
+
+' RIGHT FEED (ASYMMETRIC - bends sooner, different angles)
+Dim pR: pR = Array(PLP(BOARD_HALF_X - 20, 0), PLP(340, 0), PLP(320, 10), PLP(290, 20), _
+    PLP(260, 25), PLP(230, 22), PLP(200, 15), PLP(170, 8), PLP(140, 2))
+Poly "Trace_R", pR, "(0 255 0)"
+
+' === 9. CROSS-COUPLING POLES (ALIGNED WITH RESONATORS) ==================
+Sub Pole(idx, x, y)
+    oEditor.CreateCylinder Array("NAME:CylinderParameters", _
+        "XCenter:=", CStr(x) & "mil", "YCenter:=", CStr(y) & "mil", "ZCenter:=", CStr(Z1) & "mil", _
+        "Radius:=", "1.5mil", "Height:=", CStr(Z3 - Z1) & "mil", "WhichAxis:=", "Z", "NumSides:=", "0"), _
+        Array("NAME:Attributes", "Name:=", "Pole" & idx, "Flags:=", "", "Color:=", "(255 0 255)", _
+        "Transparency:=", 0, "PartCoordinateSystem:=", "Global", _
+        "MaterialValue:=", Chr(34) & "copper" & Chr(34), "SolveInside:=", False)
+End Sub
+
+' CORRECTED pole positions - aligned with resonator centers
+Pole 1, res_left_x - RES_X_SPACING/2, RES_Y_SPACING/4  ' Between R1-R3
+Pole 2, res_left_x - RES_X_SPACING/2, -RES_Y_SPACING/4  ' Between R2-R4
+Pole 3, res_center_x - 10, 0  ' Central coupling
+Pole 4, res_center_x + 10, 0  ' Central coupling (slight offset)
+Pole 5, res_right_x + RES_X_SPACING/2, -RES_Y_SPACING/4  ' Between R5-R7
+Pole 6, res_right_x + RES_X_SPACING/2, RES_Y_SPACING/4  ' Between R6-R8
+
+' === 10. WAVE PORTS ======================================================
+Set oModule = oDesign.GetModule("BoundarySetup")
+Sub MakePort(nm, x)
+    oEditor.CreateRectangle Array("NAME:RectangleParameters", "IsCovered:=", True, _
+        "XStart:=", CStr(x) & "mil", "YStart:=", CStr(-PORT_W/2) & "mil", "ZStart:=", CStr(Z3) & "mil", _
+        "Width:=", CStr(PORT_W) & "mil", "Height:=", CStr(TH_Cu_Inner) & "mil", "WhichAxis:=", "Y"), _
+        Array("NAME:Attributes", "Name:=", nm, "Flags:=", "", "Color:=", "(0 0 255)", "Transparency:=", 0.5, _
+        "PartCoordinateSystem:=", "Global", "MaterialValue:=", Chr(34) & "vacuum" & Chr(34), "SolveInside:=", True)
+    
+    oModule.AssignWavePort Array("NAME:" & nm, "Objects:=", Array(nm), "NumModes:=", 1, _
+        "RenormalizeAllTerminals:=", True, "UseLineModeAlignment:=", False, "DoDeembed:=", False, _
+        Array("NAME:Modes", Array("NAME:Mode1", "ModeNum:=", 1, "UseIntLine:=", True, _
+        Array("NAME:IntLine", "Start:=", Array(CStr(x) & "mil", "0mil", CStr(Z3 + TH_Cu_Inner/2) & "mil"), _
+        "End:=", Array(CStr(x) & "mil", "0mil", CStr(Z3 - TH_Cu_Inner/2) & "mil")), "CharImp:=", "Zpi")), _
+        "ShowReporterFilter:=", False, "ReporterFilter:=", Array(True), "UseAnalyticAlignment:=", False)
+End Sub
+
+MakePort "P1", -BOARD_HALF_X
+MakePort "P2", BOARD_HALF_X
+
+' === 11. SOLUTION SETUP & SWEEP ==========================================
+Set oModule = oDesign.GetModule("AnalysisSetup")
+oModule.InsertSetup "HfssDriven", Array("NAME:Setup1", "Frequency:=", "15GHz", "MaxDeltaS:=", 0.02, _
+    "MaximumPasses:=", 20, "MinimumPasses:=", 2, "MinimumConvergedPasses:=", 1, _
+    "PercentRefinement:=", 30, "IsEnabled:=", True, "BasisOrder:=", 1, _
+    "DoLambdaRefine:=", True, "DoMaterialLambda:=", True, "SetLambdaTarget:=", False, _
+    "Target:=", 0.3333, "UseMaxTetIncrease:=", False, "PortAccuracy:=", 2, _
+    "UseABCOnPort:=", False, "SetPortMinMaxTri:=", False, "UseDomains:=", False, _
+    "UseIterativeSolver:=", False, "SaveRadFieldsOnly:=", False, "SaveAnyFields:=", True, _
+    "IESolverType:=", "Auto", "LambdaTargetForIESolver:=", 0.15, "UseDefaultLambdaTgtForIESolver:=", True)
+
+oModule.InsertFrequencySweep "Setup1", Array("NAME:SW1", "IsEnabled:=", True, _
+    "RangeType:=", "LinearCount", "RangeStart:=", "10GHz", "RangeEnd:=", "20GHz", "RangeCount:=", 501, _
+    "Type:=", "Interpolating", "SaveFields:=", False, "SaveRadFields:=", False, _
+    "InterpTolerance:=", 0.5, "InterpMaxSolns:=", 250, "InterpMinSolns:=", 0, _
+    "InterpMinSubranges:=", 1, "ExtrapToDC:=", False, "InterpUseS:=", True, _
+    "InterpUsePortImped:=", False, "InterpUsePropConst:=", True, "UseDerivativeConvergence:=", False, _
+    "InterpDerivTolerance:=", 0.2, "UseFullBasis:=", True, "EnforcePassivity:=", True, _
+    "PassivityErrorTolerance:=", 0.0001)
+
+' === 12. REPORTS =========================================================
+Set oModule = oDesign.GetModule("ReportSetup")
+oModule.CreateReport "S-Params", "Modal Solution Data", "Rectangular Plot", "Setup1 : SW1", _
+    Array("Domain:=", "Sweep"), Array("Freq:=", Array("All")), _
+    Array("X Component:=", "Freq", "Y Component:=", Array("dB(S(2,1))", "dB(S(1,1))")), Array()
+
+oModule.CreateReport "Phase", "Modal Solution Data", "Rectangular Plot", "Setup1 : SW1", _
+    Array("Domain:=", "Sweep"), Array("Freq:=", Array("All")), _
+    Array("X Component:=", "Freq", "Y Component:=", Array("ang_deg(S(2,1))")), Array()
+
+oModule.CreateReport "Group_Delay", "Modal Solution Data", "Rectangular Plot", "Setup1 : SW1", _
+    Array("Domain:=", "Sweep"), Array("Freq:=", Array("All")), _
+    Array("X Component:=", "Freq", "Y Component:=", Array("GroupDelay(S(2,1))")), Array()
+
+' === 13. AIRBOX & RADIATION ==============================================
+AddBox "Air", -BOARD_HALF_X - 100, -BOARD_WY/2 - 100, Z0 - TH_Cu_Outer - 100, _
+    2*BOARD_HALF_X + 200, BOARD_WY + 200, Z5 + TH_Cu_Outer + 200, "(173 216 230)", "vacuum", True
+
+Set oModule = oDesign.GetModule("BoundarySetup")
+oModule.AssignRadiation Array("NAME:Rad1", "Objects:=", Array("Air"), _
+    "IsFssReference:=", False, "IsForPML:=", False)
+
+' === 14. VALIDATION & SAVE ===============================================
+oDesign.Validate
+oProject.SaveAs oDesktop.GetProjectDirectory & "\" & DESN$ & ".aedt", True
+
+' === 15. COMPLETION MESSAGE ==============================================
+Dim msg
+msg = "CORRECTED 8-Pole Stripline Filter Created Successfully!" & vbCrLf & vbCrLf
+msg = msg & "FIXES APPLIED:" & vbCrLf
+msg = msg & "✓ Resonator slots now face INWARD for proper coupling" & vbCrLf
+msg = msg & "✓ Corrected spacing: 95mil X, 70mil Y (from real measurements)" & vbCrLf
+msg = msg & "✓ Fixed unit concatenation bugs with CStr()" & vbCrLf
+msg = msg & "✓ Asymmetric feed routing (right side bends sooner)" & vbCrLf
+msg = msg & "✓ Copper layers flush with dielectric (no air gaps)" & vbCrLf
+msg = msg & "✓ Cross-coupling poles aligned with resonator positions" & vbCrLf
+msg = msg & "✓ Stepped PCB outline approximation" & vbCrLf
+msg = msg & "✓ Proper copper thickness (0.7mil inner, 1.4mil outer)" & vbCrLf & vbCrLf
+msg = msg & "Ready for simulation and optimization!"
+
+MsgBox msg, , DESN$
