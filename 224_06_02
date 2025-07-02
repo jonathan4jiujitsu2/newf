@@ -1,0 +1,144 @@
+'***************************************************************************
+' HFSS VBScript – 8‑Pole Multi‑Layer Stripline Filter (NO VIA FENCE)
+'   – Clean arithmetic (all mil values converted with CStr before & "mil")
+'   – Proper mirroring so every resonator couples inward
+'   – Via‑fence section removed per user request
+'***************************************************************************
+
+' === 0.  HOUSEKEEPING =====================================================
+Dim oAnsoftApp,oDesktop,oProject,oDesign,oEditor,oModule
+Set oAnsoftApp = CreateObject("AnsoftHfss.HfssScriptInterface")
+Set oDesktop   = oAnsoftApp.GetAppDesktop()
+oDesktop.RestoreWindow
+Set oProject   = oDesktop.NewProject
+Const DESN$ = "StriplineFilter_8Pole_NoVias"
+oProject.InsertDesign "HFSS",DESN$,"DrivenModal",""
+Set oDesign = oProject.SetActiveDesign(DESN$)
+Set oEditor = oDesign.SetActiveEditor("3D Modeler")
+oEditor.SetModelUnits Array("NAME:Units Parameter","Units:=","mil","Rescale:=",False)
+
+' === 1.  GLOBAL CONSTANTS  ===============================================
+' dielectric stack (mil)
+Const TH_R_Top = 10, TH_Prep2 = 2.25, TH_R_Mid = 5, TH_Prep4 = 2.25, TH_R_Bot = 10, TH_Cu = 0.65
+Const Z0      = 0
+Const Z1      = Z0 + TH_R_Bot          ' 10
+Const Z2      = Z1 + TH_Prep4          ' 12.25
+Const Z3      = Z2 + TH_R_Mid          ' 17.25
+Const Z4      = Z3 + TH_Prep2          ' 19.5
+Const Z5      = Z4 + TH_R_Top          ' 29.5   (top of dielectric)
+
+' outline (simple rectangle ‑ tweak later)
+Const BOARD_HALF_X = 400  ' total 800
+Const BOARD_WY     = 350
+
+' port / traces
+Const PORT_W = 66
+Const TRACE_W = 7.8
+
+' resonator geometry A/B (mil)
+Const A_OUT = 83.628, A_SLOT = 29.29, A_OFF = 27.165, A_SLIT = 4.39
+Const B_W = 73.352, B_H = 93.47, B_SW = 19.02, B_SH = 39.13, B_GAP = 4.07
+
+' helpers -----------------------------------------------------------
+Sub AddBox(nm,x,y,z,sx,sy,sz,col,mat,inside)
+  oEditor.CreateBox Array("NAME:BoxParameters", _
+    "XPosition:=",CStr(x)&"mil","YPosition:=",CStr(y)&"mil","ZPosition:=",CStr(z)&"mil", _
+    "XSize:=",CStr(sx)&"mil","YSize:=",CStr(sy)&"mil","ZSize:=",CStr(sz)&"mil"), _
+    Array("NAME:Attributes","Name:=",nm,"Flags:=","","Color:=",col,"Transparency:=",0.6, _
+    "PartCoordinateSystem:=","Global","MaterialValue:=",Chr(34)&mat&Chr(34), _
+    "SolveInside:=",inside)
+End Sub
+
+' === 2.  MATERIALS ========================================================
+Set oDefinitionManager = oProject.GetDefinitionManager()
+Sub AddMat(nm,er,loss)
+  oDefinitionManager.AddMaterial Array("NAME:"&nm,"CoordinateSystemType:=","Cartesian", _
+    Array("NAME:AttachedData"),"permittivity:=",CStr(er),"dielectric_loss_tangent:=",CStr(loss))
+End Sub
+AddMat "Rogers3010",10.2,0.0023
+AddMat "Prepreg2929",2.94,0.0022
+
+' === 3.  BUILD STACK ======================================================
+AddBox "Rog_Bot",-BOARD_HALF_X,-BOARD_WY/2,Z0, 2*BOARD_HALF_X,BOARD_WY,TH_R_Bot,"(0 0 255)","Rogers3010",True
+AddBox "Prep4"   ,-BOARD_HALF_X,-BOARD_WY/2,Z1, 2*BOARD_HALF_X,BOARD_WY,TH_Prep4,"(128 128 0)","Prepreg2929",True
+AddBox "Rog_Mid",-BOARD_HALF_X,-BOARD_WY/2,Z2, 2*BOARD_HALF_X,BOARD_WY,TH_R_Mid,"(0 128 0)","Rogers3010",True
+AddBox "Prep2"   ,-BOARD_HALF_X,-BOARD_WY/2,Z3, 2*BOARD_HALF_X,BOARD_WY,TH_Prep2,"(128 128 0)","Prepreg2929",True
+AddBox "Rog_Top",-BOARD_HALF_X,-BOARD_WY/2,Z4, 2*BOARD_HALF_X,BOARD_WY,TH_R_Top,"(144 238 144)","Rogers3010",True
+
+' === 4.  RESONATOR MAKERS ================================================
+Sub MkA(tag,x,y,z)
+  AddBox tag&"Cu",x,y,z,A_OUT,A_OUT,TH_Cu,"(255 128 0)","copper",False
+  AddBox tag&"slot",x+A_OFF,y+A_OFF,z,A_SLOT,A_SLOT,TH_Cu,"(255 0 0)","vacuum",True
+  AddBox tag&"slit",x+A_OFF+A_SLOT, y+A_OFF+A_SLOT/2-A_SLIT/2, z, A_SLIT,A_SLIT,TH_Cu,"(255 0 0)","vacuum",True
+  oEditor.Subtract Array("NAME:Selections","Blank Parts:=",tag&"Cu","Tool Parts:=",tag&"slot,"&tag&"slit"),Array("NAME:SubtractParameters","KeepOriginals:=",False)
+End Sub
+Sub MkB(tag,x,y,z)
+  AddBox tag&"Cu",x,y,z,B_W,B_H,TH_Cu,"(255 64 64)","copper",False
+  AddBox tag&"s1",x+A_OFF,y+A_OFF,z,B_SW,(B_SH-B_GAP)/2,TH_Cu,"(255 0 0)","vacuum",True
+  AddBox tag&"s2",x+A_OFF,y+A_OFF+(B_SH-B_GAP)/2+B_GAP,z,B_SW,(B_SH-B_GAP)/2,TH_Cu,"(255 0 0)","vacuum",True
+  oEditor.Subtract Array("NAME:Selections","Blank Parts:=",tag&"Cu","Tool Parts:=",tag&"s1,"&tag&"s2"),Array("NAME:SubtractParameters","KeepOriginals:=",False)
+End Sub
+
+' left quartet
+MkA "R1L", -200,  50, Z2           ' A top
+MkB "R2L", -200, -80, Z1           ' B bottom
+MkB "R3L",  -60,  50, Z2           ' B top
+MkA "R4L",  -60, -80, Z1           ' A bottom
+' right quartet (mirrored)
+MkA "R5R",  60-A_OUT, -80, Z1
+MkB "R6R",  60-B_W,    50, Z2
+MkB "R7R", 200-B_W,   -80, Z1
+MkA "R8R", 200-A_OUT,  50, Z2
+
+' === 5.  FEED: LAUNCH PADS & TRACES ======================================
+Sub LaunchPad(nm,x0)
+  AddBox nm,x0,-PORT_W/2,Z3,20,PORT_W,TH_Cu,"(0 255 0)","copper",False
+End Sub
+LaunchPad "Pad_L",-BOARD_HALF_X
+LaunchPad "Pad_R", BOARD_HALF_X-20
+
+Function PLP(x,y): PLP = Array("NAME:PLPoint","X:=",CStr(x)&"mil","Y:=",CStr(y)&"mil","Z:=",CStr(Z3)&"mil"): End Function
+Sub SegArray(ByRef a,n): ReDim a(n-1): Dim i: For i=0 To n-1: a(i)=Array("NAME:PLSegment","SegmentType:=","Line","StartIndex:=",i,"NoOfPoints:=",2):Next: End Sub
+Sub Poly(nm,pts)
+  Dim segs: SegArray segs,UBound(pts)
+  oEditor.CreatePolyline Array("NAME:PolylineParameters","IsPolylineCovered:=",True,"IsPolylineClosed:=",False,Array("NAME:PolylinePoints",pts),Array("NAME:PolylineSegments",segs),Array("NAME:PolylineXSection","XSectionType:=","Rectangle","XSectionOrient:=","Auto","XSectionWidth:=",CStr(TRACE_W)&"mil","XSectionTopWidth:=","0mil","XSectionHeight:=",CStr(TH_Cu)&"mil","XSectionNumSegments:=","0","XSectionBendType:=","Corner")),Array("NAME:Attributes","Name:=",nm,"Flags:=","","Color:=","(0 255 0)","Transparency:=",0,"PartCoordinateSystem:=","Global","MaterialValue:=",Chr(34)&"copper"&Chr(34),"SolveInside:=",False)
+End Sub
+
+Dim pL: pL = Array(PLP(-BOARD_HALF_X+20,0),PLP(-300,0),PLP(-280,20),PLP(-250,40),PLP(-220,30),PLP(-180,10),PLP(-140,-10),PLP(-100,-20),PLP(-60,-15))
+Poly "Trace_L",pL
+' mirror for right
+Dim pR(): ReDim pR(UBound(pL)): Dim i: For i=0 To UBound(pL): pR(i)=pL(i): pR(i)(2)=CStr(-CDbl(Replace(pL(i)(2),"mil","")))&"mil": Next
+Poly "Trace_R",pR
+
+' === 6.  CROSS‑COUPLING POLES ============================================
+Sub Pole(idx,x,y)
+  oEditor.CreateCylinder Array("NAME:CylinderParameters","XCenter:=",CStr(x)&"mil","YCenter:=",CStr(y)&"mil","ZCenter:=",CStr(Z1)&"mil","Radius:=","1.5mil","Height:=",CStr(Z2-Z1)&"mil","WhichAxis:=","Z","NumSides:=","0"),Array("NAME:Attributes","Name:=","Pole"&idx,"Flags:=","","Color:=","(255 0 255)","Transparency:=",0,"PartCoordinateSystem:=","Global","MaterialValue:=",Chr(34)&"copper"&Chr(34),"SolveInside:=",False)
+End Sub
+Pole 1,-130, 75: Pole 2,-130,-25: Pole 3,-20,0: Pole 4,20,0: Pole 5,130,-25: Pole 6,130,75
+
+' === 7.  WAVE PORTS =======================================================
+Set oModule = oDesign.GetModule("BoundarySetup")
+Sub MakePort(nm,x)
+  oEditor.CreateRectangle Array("NAME:RectangleParameters","IsCovered:=",True,"XStart:=",CStr(x)&"mil","YStart:=",CStr(-PORT_W/2)&"mil","ZStart:=",CStr(Z3)&"mil","Width:=",CStr(PORT_W)&"mil","Height:=",CStr(TH_Cu)&"mil","WhichAxis:=","Y"),Array("NAME:Attributes","Name:=",nm,"Flags:=","","Color:=","(0 0 255)","Transparency:=",0.5,"PartCoordinateSystem:=","Global","MaterialValue:=",Chr(34)&"vacuum"&Chr(34),"SolveInside:=",True)
+  oModule.AssignWavePort Array("NAME:"&nm,"Objects:=",Array(nm),"NumModes:=",1,"RenormalizeAllTerminals:=",True,"UseLineModeAlignment:=",False,"DoDeembed:=",False,Array("NAME:Modes",Array("NAME:Mode1","ModeNum:=",1,"UseIntLine:=",True,Array("NAME:IntLine","Start:=",Array(CStr(x)&"mil","0mil",CStr(Z3+TH_Cu/2)&"mil"),"End:=",Array(CStr(x)&"mil","0mil",CStr(Z3-TH_Cu/2)&"mil")),"CharImp:=","Zpi")))
+End Sub
+MakePort "P1",-BOARD_HALF_X
+MakePort "P2", BOARD_HALF_X
+
+' === 8.  SOLUTION SETUP & SWEEP ===========================================
+Set oModule = oDesign.GetModule("AnalysisSetup")
+oModule.InsertSetup "HfssDriven",Array("NAME:Setup1","Frequency:=","15GHz","MaxDeltaS:=",0.02,"MaximumPasses:=",20,"MinimumPasses:=",2)
+oModule.InsertFrequencySweep "Setup1",Array("NAME:SW1","RangeType:=","LinearCount","RangeStart:=","10GHz","RangeEnd:=","20GHz","RangeCount:=",501,"Type:=","Fast","SaveFields:=",False)
+
+' === 9.  REPORTS ===========================================================
+Set oModule = oDesign.GetModule("ReportSetup")
+oModule.CreateReport "S‑Params","Modal Solution Data","Rectangular Plot","Setup1 : SW1",Array("Domain:=","Sweep"),Array("Freq:=",Array("All")),Array("X Component:=","Freq","Y Component:=",Array("dB(S(2,1))","dB(S(1,1))")),Array()
+
+' === 10.  AIRBOX & RADIATION =============================================
+AddBox "Air",-BOARD_HALF_X-100,-BOARD_WY/2-100,Z0-TH_Cu-100,2*BOARD_HALF_X+200,BOARD_WY+200,Z5+TH_Cu+100,"(173 216 230)","vacuum",True
+Set oModule = oDesign.GetModule("BoundarySetup")
+oModule.AssignRadiation Array("NAME:Rad1","Objects:=",Array("Air"),"IsFssReference:=",False,"IsForPML:=",False)
+
+' === 11.  SAVE & MESSAGE ===================================================
+oProject.SaveAs oDesktop.GetProjectDirectory & "\" & DESN$ & ".aedt",True
+MsgBox "Stripline 8‑pole filter (no vias) created successfully!",,DESN$
