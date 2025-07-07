@@ -1,0 +1,150 @@
+'======================================================================
+' 8-Pole Stripline Filter – symmetric layout   (photo 2025-07-07)
+' Jonathan WCSJCJ – last update 2025-07-07
+'======================================================================
+
+' ──────────────────────────────────────────────────────────────────────
+'  USER-TUNABLE DIMENSIONS  (mil unless noted)
+' ──────────────────────────────────────────────────────────────────────
+Dim OUT_A      : OUT_A      = 83.628     'outer square   (Res 1,4,5,8)
+Dim SLOT_A     : SLOT_A     = 29.29      'inner square cut-out
+Dim SLOT_OFF   : SLOT_OFF   = 27.16      'slot offset from outer corner
+Dim GAP_A      : GAP_A      = 4.39       'feed gap width (on right edge)
+
+Dim OUT_Bx     : OUT_Bx     = 93.47      'outer X (Res 2,3,6,7)
+Dim OUT_By     : OUT_By     = 73.352     'outer Y
+Dim SLOT_Bx    : SLOT_Bx    = 19.02      'inner window X
+Dim SLOT_By    : SLOT_By    = 27.165     'inner window Y
+Dim GAP_B      : GAP_B      = 4.07       'feed gap width (on left edge)
+
+Dim TRACE_W    : TRACE_W    = 0.65       'conductor thickness (Z)
+Dim Z_LVL      : Z_LVL      = 0          'all resonators on this Z
+
+' centre–centre spacings from photo
+Dim DX_TOP     : DX_TOP     = 111.0      'Res-2 → Res-3 (top row)
+Dim DX_BOT     : DX_BOT     = 83.628+20.47 'Res-1 → Res-4 pitch
+Dim DY_ROWS    : DY_ROWS    = 83.628+11  'top row → bottom row
+
+' origin = centre of the photo (between Res-3 & Res-5)
+Const ORG_X = 0
+Const ORG_Y = 0
+
+' ──────────────────────────────────────────────────────────────────────
+'  HFSS boiler-plate
+' ──────────────────────────────────────────────────────────────────────
+Dim oAnsoftApp, oDesktop, oProject, oDesign, oEditor
+Set oAnsoftApp = CreateObject("AnsoftHfss.HfssScriptInterface")
+Set oDesktop   = oAnsoftApp.GetAppDesktop()
+oDesktop.RestoreWindow
+Set oProject   = oDesktop.NewProject
+oProject.InsertDesign "HFSS","Stripline_8Res","DrivenModal",""
+Set oDesign    = oProject.GetActiveDesign
+Set oEditor    = oDesign.SetActiveEditor("3D Modeler")
+oEditor.SetModelUnits Array("NAME:Units Parameter","Units:=","mil","Rescale:=",false)
+
+' ──────────────────────────────────────────────────────────────────────
+'  small helpers
+' ──────────────────────────────────────────────────────────────────────
+Sub Box(objName, x, y, z, dx, dy, dz)
+  oEditor.CreateBox Array("NAME:BoxParameters", _
+      "XPosition:=",CStr(x)&"mil","YPosition:=",CStr(y)&"mil","ZPosition:=",CStr(z)&"mil", _
+      "XSize:=",CStr(dx)&"mil","YSize:=",CStr(dy)&"mil","ZSize:=",CStr(dz)&"mil"), _
+    Array("NAME:Attributes","Name:=",objName,"Flags:=","", _
+          "Color:=","(255 140 0)","Transparency:=",0, _
+          "PartCoordinateSystem:=","Global","MaterialValue:=",Chr(34)&"copper"&Chr(34), _
+          "SolveInside:=",false)
+End Sub
+
+Sub Cut(blank, tool)
+  oEditor.Subtract Array("NAME:Selections","Blank Parts:=",blank,"Tool Parts:=",tool), _
+                   Array("NAME:SubtractParameters","KeepOriginals:=",false)
+End Sub
+
+Sub Move(obj, dx, dy)
+  oEditor.Move Array("NAME:Selections","Selections:=",obj), _
+               Array("NAME:MoveParameters","XComponent:=",CStr(dx)&"mil", _
+                     "YComponent:=",CStr(dy)&"mil","ZComponent:=","0mil")
+End Sub
+
+Sub Rotate(obj, angDeg)
+  oEditor.Rotate Array("NAME:Selections","Selections:=",obj), _
+                 Array("NAME:RotateParameters","CoordinateSystemID:=", -1, _
+                       "Axis:=","Z","Angle:=",CStr(angDeg)&"deg")
+End Sub
+
+Function Clone(srcName)
+  'returns the name of the first pasted object
+  oEditor.Copy Array("NAME:Selections","Selections:=",srcName)
+  Dim arr : arr = oEditor.Paste
+  Clone = arr(0)
+End Function
+
+Sub Rename(obj, newName)
+  oEditor.ChangeProperty Array("NAME:AllTabs",Array("NAME:AttributesTab", _
+      Array("NAME:PropServers",obj), _
+      Array("NAME:ChangedProps",Array("NAME:Name","Value:=",newName))))
+End Sub
+
+' ──────────────────────────────────────────────────────────────────────
+'  BUILD  base resonator TYPE-A  (square ring, gap on RIGHT)
+' ──────────────────────────────────────────────────────────────────────
+Box "A_outer", -OUT_A/2, -OUT_A/2, Z_LVL, OUT_A, OUT_A, TRACE_W
+Box "A_slot" , -OUT_A/2+SLOT_OFF, -OUT_A/2+SLOT_OFF, Z_LVL, SLOT_A, SLOT_A, TRACE_W
+Cut "A_outer", "A_slot"
+Box "A_gap"  , OUT_A/2-GAP_A, -OUT_A/2, Z_LVL, GAP_A, OUT_A, TRACE_W
+Cut "A_outer", "A_gap"
+Dim BaseA : BaseA = "A_outer"
+
+' ──────────────────────────────────────────────────────────────────────
+'  BUILD  base resonator TYPE-B  (rect ring, gap on LEFT)
+' ──────────────────────────────────────────────────────────────────────
+Box "B_outer", -OUT_Bx/2, -OUT_By/2, Z_LVL, OUT_Bx, OUT_By, TRACE_W
+Box "B_slot" , -SLOT_Bx/2, -SLOT_By/2, Z_LVL, SLOT_Bx, SLOT_By, TRACE_W
+Cut "B_outer", "B_slot"
+Box "B_gap"  , -OUT_Bx/2, -OUT_By/2+SLOT_By, Z_LVL, GAP_B, OUT_By-SLOT_By, TRACE_W
+Cut "B_outer", "B_gap"
+Dim BaseB : BaseB = "B_outer"
+
+' ──────────────────────────────────────────────────────────────────────
+'  PLACE   eight resonators
+' ──────────────────────────────────────────────────────────────────────
+' ─ top row ──────────────────────────────────
+Dim Res2 : Res2 = Clone(BaseB)          'Res 2
+Move  Res2, ORG_X-DX_TOP, ORG_Y+DY_ROWS/2
+Rename Res2, "Res_2"
+
+Dim Res3 : Res3 = Clone(Res2)           'Res 3
+Move  Res3, DX_TOP, 0
+Rotate Res3, 180
+Rename Res3, "Res_3"
+
+Dim Res5 : Res5 = Clone(BaseA)          'Res 5
+Move  Res5, ORG_X+DX_TOP, ORG_Y+DY_ROWS/2
+Rename Res5, "Res_5"
+
+Dim Res8 : Res8 = Clone(Res5)           'Res 8
+Move  Res8, DX_TOP, 0
+Rotate Res8, 180
+Rename Res8, "Res_8"
+
+' ─ bottom row ───────────────────────────────
+Dim Res1 : Res1 = Clone(BaseA)          'Res 1
+Move  Res1, ORG_X-DX_TOP-DX_BOT/2, ORG_Y-DY_ROWS/2
+Rename Res1, "Res_1"
+
+Dim Res4 : Res4 = Clone(Res1)           'Res 4
+Move  Res4, DX_BOT, 0
+Rotate Res4, 180
+Rename Res4, "Res_4"
+
+Dim Res7 : Res7 = Clone(BaseB)          'Res 7
+Move  Res7, ORG_X+DX_TOP, ORG_Y-DY_ROWS/2
+Rotate Res7, 180
+Rename Res7, "Res_7"
+
+Dim Res6 : Res6 = Clone(Res7)           'Res 6
+Move  Res6, DX_TOP, 0
+Rename Res6, "Res_6"
+
+' ──────────────────────────────────────────────────────────────────────
+MsgBox "8-resonator layout created successfully!", , "Done"
