@@ -1,0 +1,818 @@
+'Initialize variables
+Dim oAnsoftApp
+Dim oDesktop
+Dim oProject
+Dim oDesign
+Dim oEditor
+Dim oModule
+
+Dim Res_direction_var_value(40)
+Dim Res_total_length_var_value(40)
+Dim Res_trace_width_var_value(40)
+Dim Res_trace_gap_var_value(40)
+Dim Res_x_spacing_var_value(40)
+Dim Res_y_spacing_var_value(40)
+
+'Set project objects
+Set oAnsoftApp = CreateObject("AnsoftHfss.HfssScriptinterface")
+Set oDesktop = oAnsoftApp.GetAppDesktop()
+oDesktop.RestoreWindow
+Set oProject = oDesktop.NewProject
+Set oProject = oDesktop.GetActiveProject
+oProject.InsertDesign "HFSS", "HFSSDesign1", "DrivenModal", ""
+
+Set oDesign = oProject.GetActiveDesign
+Set oEditor = oDesign.SetActiveEditor("3D Modeler")
+
+'STATIC VARIABLES
+'To get these variables through input boxes instead:
+'1) Comment it out
+'2) Uncomment its associated input box including the "If" statement on the line below it
+'3) Uncomment one of the "End If" statements at the end of the script
+
+'Material Properties
+core_L01_L02_material_name="Core1_Name%^&"
+core_L01_L02_dielectric_constant="Core1_Er%^&"
+core_L01_L02_dielectric_loss_tangent="Core1_loss_tangent%^&"
+prepreg_L01_L02_material_name="Prepreg_Name%^&"
+prepreg_L01_L02_dielectric_constant="Prepreg_Er%^&"
+prepreg_L01_L02_dielectric_loss_tangent="Prepreg_loss_tangent%^&"
+core_L02_L03_material_name="Core2_Name%^&" 'If same as Core_L01_L02, enter same name here
+core_L02_L03_dielectric_constant="Core2_Er%^&"
+core_L02_L03_dielectric_loss_tangent="Core2_loss_tangent%^&"
+cond_material_name="Conductor_Name%^&"
+cond_bulk_conductivity="Conductor_bulk_cond%^&"
+
+Set oDefinitionManager = oProject.GetDefinitionManager()
+oDefinitionManager.AddMaterial Array("NAME:&core_L01_L02_material_name", "CoordinateSystemType:=", _
+"Cartesian", Array("NAME:AttachedData"), "permittivity:=", _
+core_L01_L02_dielectric_constant, "dielectric_loss_tangent:=", _
+core_L01_L02_dielectric_loss_tangent)
+
+oDefinitionManager.AddMaterial Array("NAME:&prepreg_L01_L02_material_name", _
+"Cartesian", Array("NAME:AttachedData"), "permittivity:=", _
+prepreg_L01_L02_dielectric_constant, "dielectric_loss_tangent:=", _
+prepreg_L01_L02_dielectric_loss_tangent)
+
+If core_L02_L03_material_name <> core_L01_L02_material_name Then
+oDefinitionManager.AddMaterial Array("NAME:&core_L02_L03_material_name", _
+"Cartesian", Array("NAME:AttachedData"), "permittivity:=", _
+core_L02_L03_dielectric_constant, "dielectric_loss_tangent:=", _
+core_L02_L03_dielectric_loss_tangent)
+End If
+
+oDefinitionManager.AddMaterial Array("NAME:&cond_material_name", _
+"Cartesian", Array("NAME:AttachedData"), Array("NAME:ModifierData"), _
+"conductivity:=", cond_bulk_conductivity)
+
+'Solution Setup
+solution_freq_value = "Center%^&" 'This should be set to the center of your
+passband
+solution_freq = solution_freq_value & "GHz" 'Comment out if not using user
+interface
+solution_freq_value_11 = "Center%^& + Delta_fc_mesh%^&" 'This should be set
+to the center of your passband
+solution_freq_11 = solution_freq_value_11 & "GHz" 'Comment out if not using
+user interface
+solution_freq_value_12 = "Center%^& - Delta_fc_mesh%^&" 'This should be set to
+the center of your passband
+solution_freq_12 = solution_freq_value_12 & "GHz" 'Comment out if not using
+user interface
+
+sweep_type = "Interpolating" 'Choices are Fast, Interpolating, Discrete
+start_freq = "Start%^&" & "GHz"
+end_freq = "Stop%^&" & "GHz"
+step_size = "0.01GHz"
+max_delta_s = 0.01 'Convergence Setting
+num_passes = 40 'Ensure this is set high enough to not limit the convergence
+percent_refine = 10 'The lower this number the less HFSS will overmesh, but
+this will require more passes
+
+'Size Properties
+Core_L01_L02_Height = "Core1_Height%^&" 'Top Core
+height
+Prepreg_L01_L02_Height = "Prepreg_Height%^&" 'Prepreg
+height above substrate
+Core_L02_L03_Height = "Core2_Height%^&" 'Bottom Core
+height
+
+cond_h_top = "Conductor_Thickness_Top%^&" 'Conductor
+thickness
+cond_h_trace = "Conductor_Thickness_Trace%^&"
+'Conductor thickness
+cond_h_bottom = "Conductor_Thickness_Bottom%^&"
+'Conductor thickness
+
+'Get User Input
+num_poles = "reson%^&"
+If num_poles<>"" Then
+'Get user inputs for filter length and first element
+Edge_wall_pullback_value = "Edge_wall_pullback%^&"
+If Edge_wall_pullback_value <> "" Then
+Wio_value = "Wio%^&"
+If Wio_value<>"" Then
+Port_Width_value = "Port_Width%^&"
+If Port_Width_value<>"" Then
+Lio_value = "Lio%^&"
+If Lio_value<>"" Then
+
+Launch_orientation = "Launch_orientation%^&"
+Launch_width_value = "Launch_width%^&"
+Launch_width = Launch_width_value & "mil"
+Launch_spacing_value = "Launch_spacing%^&"
+Launch_spacing = Launch_spacing_value & "mil"
+
+Core_L01_L02_Height_value = CDbl(Core_L01_L02_Height)
+Prepreg_L01_L02_Height_value = CDbl(Prepreg_L01_L02_Height)
+Core_L02_L03_Height_value = CDbl(Core_L02_L03_Height)
+
+Edge_wall_pullback=Edge_wall_pullback_value&"mil"
+Wio=Wio_value&"mil"
+Port_Width=Port_Width_value&"mil"
+Lio=Lio_value&"mil"
+XYSpacing_Scale = "XYSpacing_scale%^&" ' Added quotes to make it a string
+
+' These lines were incomplete placeholders in the original script.
+' %^&addline_Res_direction%^&
+' %^&addline_Res_total_length%^&
+' %^&addline_Res_trace_width%^&
+' %^&addline_Res_trace_gap%^&
+' %^&addline_Res_X_spacing%^&
+' %^&addline_Res_y_spacing%^&
+
+Res_direction_var_value(1) = 1
+Res_direction_var_value(2) = 3
+Res_direction_var_value(3) = 2
+Res_direction_var_value(4) = 4
+
+Res_total_length_var_value(1) = 200
+Res_total_length_var_value(2) = 200
+Res_total_length_var_value(3) = 200
+Res_total_length_var_value(4) = 200
+
+Res_trace_width_var_value(1) = 10
+Res_trace_width_var_value(2) = 10
+Res_trace_width_var_value(3) = 10
+Res_trace_width_var_value(4) = 10
+
+Res_trace_gap_var_value(1) = 5
+Res_trace_gap_var_value(2) = 5
+Res_trace_gap_var_value(3) = 5
+Res_trace_gap_var_value(4) = 5
+
+Res_x_spacing_var_value(1) = 20
+Res_x_spacing_var_value(2) = 5
+Res_x_spacing_var_value(3) = 30
+Res_x_spacing_var_value(4) = 15
+
+Res_y_spacing_var_value(1) = 20
+Res_y_spacing_var_value(2) = 30
+Res_y_spacing_var_value(3) = 40
+
+Dim Tap_location ' Declaring Tap_location variable
+Tap_location = "0mil" ' Placeholder value, as it was used but not defined in the provided snippet
+
+oDesign.ChangeProperty Array("NAME:AllTabs", _
+Array("NAME:LocalVariableTab", Array("NAME:PropServers"), _
+"LocalVariables"), Array("NAME:NewProps", Array("NAME:Tap_location", _
+"PropType:=", "VariableProp", "UserDef:=", _
+true, "Value:=", Tap_location)))
+
+oDesign.ChangeProperty Array("NAME:AllTabs", _
+Array("NAME:LocalVariableTab", Array("NAME:PropServers"), _
+"LocalVariables"), Array("NAME:NewProps", Array("NAME:Launch_width", _
+"PropType:=", "VariableProp", "UserDef:=", _
+true, "Value:=", Launch_width)))
+
+oDesign.ChangeProperty Array("NAME:AllTabs", _
+Array("NAME:LocalVariableTab", Array("NAME:PropServers"), _
+"LocalVariables"), Array("NAME:NewProps", Array("NAME:Launch_spacing", _
+"PropType:=", "VariableProp", "UserDef:=", _
+true, "Value:=", Launch_spacing)))
+
+oDesign.ChangeProperty Array("NAME:AllTabs", _
+Array("NAME:LocalVariableTab", Array("NAME:PropServers"), _
+"LocalVariables"), Array("NAME:NewProps", Array("NAME:Edge_wall_pullback", _
+"PropType:=", "VariableProp", "UserDef:=", _
+true, "Value:=", Edge_wall_pullback)))
+
+oDesign.ChangeProperty Array("NAME:AllTabs", _
+Array("NAME:LocalVariableTab", Array("NAME:PropServers"), _
+"LocalVariables"), Array("NAME:NewProps", Array("NAME:Wio", _
+"PropType:=", "VariableProp", "UserDef:=", _
+true, "Value:=", Wio)))
+
+oDesign.ChangeProperty Array("NAME:AllTabs", _
+Array("NAME:LocalVariableTab", Array("NAME:PropServers"), _
+"LocalVariables"), Array("NAME:NewProps", Array("NAME:Port_Width", _
+"PropType:=", "VariableProp", "UserDef:=", _
+true, "Value:=", Port_Width)))
+
+oDesign.ChangeProperty Array("NAME:AllTabs", _
+Array("NAME:LocalVariableTab", Array("NAME:PropServers"), _
+"LocalVariables"), Array("NAME:NewProps", Array("NAME:Lio", _
+"PropType:=", "VariableProp", "UserDef:=", _
+true, "Value:=", Lio)))
+
+'Add variable to shift all resonators at once
+oDesign.ChangeProperty Array("NAME:AllTabs", _
+Array("NAME:LocalVariableTab", Array("NAME:PropServers"), _
+"LocalVariables"), Array("NAME:NewProps", _
+Array("NAME:ResonatorDeltaL", "PropType:=", "VariableProp", "UserDef:=", _
+true, "Value:=", "0mil")))
+
+'Add variable to scale all resonator spacings at once
+oDesign.ChangeProperty Array("NAME:AllVariableTab", _
+Array("NAME:LocalVariableTab", Array("NAME:PropServers"), _
+"LocalVariables"), Array("NAME:NewProps", _
+Array("NAME:XYSpacing_Scale", "PropType:=", "VariableProp", "UserDef:=", _
+true, "Value:=", XYSpacing_Scale)))
+
+'Get user input for the rest of the element widths and spacings
+For e = 1 to int(num_poles/2)
+
+If (n>1) Then
+'Update starting x-loc and y-loc of filter resonator
+x_loc = "-(Res_x_spacing"& n & ")/2"
+' set new y-loc as previous y-loc - side length of previous resonator
+' - spacing to previous resonator
+y_loc = "y_loc - ((Res_total_length"&(n-1)&")+Res_trace_gap"&(n-1)&")/4+Res_trace_width"&(n-1)&") - Res_y_spacing"&(n-1)
+End If
+
+If n=1 Then
+Cond_string = "L02_1"
+Else
+Cond_string = Cond_string & ",L02_" & n
+End If
+
+'Calculate Resonator Side Length (outside length, center line is for total res
+'length, assume square resonators)
+Res_side_length = _
+"((Res_total_length"&n&"+Res_trace_gap"&n&")/4+Res_trace_width"&n&")"
+
+'First half of filter
+If Res_direction_var_value(n)=1 Then
+'Create resonator with gap on right
+oEditor.CreatePolyline Array("NAME:PolylineParameters", _
+"IsPolylineCovered:=", true, "IsPolylineClosed:=", _
+true, Array("NAME:PolylinePoints", _
+Array("NAME:PLPoint", "X:=", x_loc, "Y:=", y_loc, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", x_loc, "Y:=", "y_loc + Res_side_length/2 + Res_trace_gap"&n&"/2", "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc - Res_trace_width"&n, "Y:=", "y_loc + Res_side_length/2 + Res_trace_gap"&n&"/2", "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc - Res_trace_width"&n, "Y:=", "y_loc - Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_side_length + Res_trace_width"&n, "Y:=", "y_loc - Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_side_length + Res_trace_width"&n, "Y:=", "y_loc + Res_side_length + Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc - Res_trace_width"&n, "Y:=", "y_loc + Res_side_length + Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc - Res_trace_width"&n, "Y:=", "y_loc - Res_side_length/2 - Res_trace_gap"&n&"/2", "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", x_loc, "Y:=", "y_loc - Res_side_length/2 - Res_trace_gap"&n&"/2", "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", x_loc, "Y:=", "y_loc - Res_side_length", "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc - Res_side_length", "Y:=", "y_loc - Res_side_length", "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc - Res_side_length", "Y:=", y_loc, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", x_loc, "Y:=", y_loc, "Z:=", "0mil")), _
+Array("NAME:PolylineSegments", _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 0, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 1, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 2, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 3, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 4, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 5, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 6, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 7, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 8, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 9, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 10, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 11, "NoOfPoints:=", 2)), _
+Array("NAME:PolylineXSection", "XSectionType:=", _
+"None", "XSectionOrient:=", "Auto", "XSectionWidth:=", "0mm", _
+"XSectionTopWidth:=", _
+"0mm", "XSectionHeight:=", "0mm", "XSectionNumSegments:=", "0", _
+"XSectionBendType:=", _
+"Corner")), Array("NAME:Attributes", "Name:=", "L02_" & n, "Flags:=", _
+"Normal", "Color:=", _
+"(143 175 143)"), Array("NAME:MaterialProperties", "MaterialName:=", _
+"cond_material_name", "SolveInside:=", true))
+
+'Create resonator with gap on left
+ElseIf Res_direction_var_value(n)=2 Then
+oEditor.CreatePolyline Array("NAME:PolylineParameters", _
+"IsPolylineCovered:=", true, "IsPolylineClosed:=", _
+true, Array("NAME:PolylinePoints", _
+Array("NAME:PLPoint", "X:=", x_loc, "Y:=", y_loc, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", x_loc, "Y:=", "y_loc + Res_side_length/2 + Res_trace_gap"&n&"/2", "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_trace_width"&n, "Y:=", "y_loc + Res_side_length/2 + Res_trace_gap"&n&"/2", "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_trace_width"&n, "Y:=", "y_loc - Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc - Res_side_length - Res_trace_width"&n, "Y:=", "y_loc + Res_side_length + Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_trace_width"&n, "Y:=", "y_loc + Res_side_length + Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_trace_width"&n, "Y:=", "y_loc - Res_side_length/2 - Res_trace_gap"&n&"/2", "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", x_loc, "Y:=", "y_loc - Res_side_length/2 - Res_trace_gap"&n&"/2", "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", x_loc, "Y:=", "y_loc - Res_side_length", "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_side_length", "Y:=", "y_loc - Res_side_length", "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_side_length", "Y:=", y_loc, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", x_loc, "Y:=", y_loc, "Z:=", "0mil")), _
+Array("NAME:PolylineSegments", _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 0, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 1, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 2, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 3, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 4, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 5, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 6, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 7, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 8, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 9, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 10, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 11, "NoOfPoints:=", 2)), _
+Array("NAME:PolylineXSection", "XSectionType:=", _
+"None", "XSectionOrient:=", "Auto", "XSectionWidth:=", "0mm", _
+"XSectionTopWidth:=", _
+"0mm", "XSectionHeight:=", "0mm", "XSectionNumSegments:=", "0", _
+"XSectionBendType:=", _
+"Corner")), Array("NAME:Attributes", "Name:=", "L02_" & n, "Flags:=", _
+"Normal", "Color:=", _
+"(143 175 143)"), Array("NAME:MaterialProperties", "MaterialName:=", _
+"cond_material_name", "SolveInside:=", true))
+
+'Create resonator with gap on top (Res_direction_var_value(n)=3)
+ElseIf Res_direction_var_value(n)=3 Then
+oEditor.CreatePolyline Array("NAME:PolylineParameters", _
+"IsPolylineCovered:=", true, "IsPolylineClosed:=", _
+true, Array("NAME:PolylinePoints", _
+Array("NAME:PLPoint", "X:=", x_loc, "Y:=", y_loc, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", x_loc, "Y:=", "y_loc + Res_side_length + Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_side_length + Res_trace_width"&n, "Y:=", "y_loc + Res_side_length + Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_side_length + Res_trace_width"&n, "Y:=", "y_loc - Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc - Res_trace_width"&n, "Y:=", "y_loc - Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc - Res_trace_width"&n, "Y:=", "y_loc + Res_side_length + Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_side_length/2 + Res_trace_gap"&n&"/2", "Y:=", "y_loc + Res_side_length + Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_side_length/2 - Res_trace_gap"&n&"/2", "Y:=", "y_loc + Res_side_length + Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_trace_width"&n, "Y:=", "y_loc + Res_side_length + Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_trace_width"&n, "Y:=", "y_loc + Res_side_length - Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_side_length - Res_trace_width"&n, "Y:=", "y_loc + Res_side_length - Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_side_length - Res_trace_width"&n, "Y:=", "y_loc + Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_trace_width"&n, "Y:=", "y_loc + Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_trace_width"&n, "Y:=", "y_loc + Res_side_length - Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", x_loc, "Y:=", y_loc, "Z:=", "0mil")), _
+Array("NAME:PolylineSegments", _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 0, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 1, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 2, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 3, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 4, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 5, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 6, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 7, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 8, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 9, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 10, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 11, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 12, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 13, "NoOfPoints:=", 2)), _
+Array("NAME:PolylineXSection", "XSectionType:=", _
+"None", "XSectionOrient:=", "Auto", "XSectionWidth:=", "0mm", _
+"XSectionTopWidth:=", _
+"0mm", "XSectionHeight:=", "0mm", "XSectionNumSegments:=", "0", _
+"XSectionBendType:=", _
+"Corner")), Array("NAME:Attributes", "Name:=", "L02_" & n, "Flags:=", _
+"Normal", "Color:=", _
+"(132 132 193)"), Array("NAME:MaterialProperties", "MaterialName:=", _
+"" & Chr(34) & cond_material_name & Chr(34) & "", "SolveInside:=", false))
+
+'Create resonator with gap on bottom (Res_direction_var_value(n)=4)
+ElseIf Res_direction_var_value(n)=4 Then
+oEditor.CreatePolyline Array("NAME:PolylineParameters", _
+"IsPolylineCovered:=", true, "IsPolylineClosed:=", _
+true, Array("NAME:PolylinePoints", _
+Array("NAME:PLPoint", "X:=", x_loc, "Y:=", y_loc, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", x_loc, "Y:=", "y_loc - Res_side_length", "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_side_length/2 - Res_trace_gap"&n&"/2", "Y:=", "y_loc - Res_side_length", "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_side_length/2 + Res_trace_gap"&n&"/2", "Y:=", "y_loc - Res_side_length", "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_side_length", "Y:=", "y_loc - Res_side_length", "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_side_length", "Y:=", y_loc, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_side_length - Res_trace_width"&n, "Y:=", y_loc, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_side_length - Res_trace_width"&n, "Y:=", "y_loc - Res_side_length + Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_side_length/2 + Res_trace_gap"&n&"/2", "Y:=", "y_loc - Res_side_length + Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_side_length/2 - Res_trace_gap"&n&"/2", "Y:=", "y_loc - Res_side_length + Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_trace_width"&n, "Y:=", "y_loc - Res_side_length + Res_trace_width"&n, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", "x_loc + Res_trace_width"&n, "Y:=", y_loc, "Z:=", "0mil"), _
+Array("NAME:PLPoint", "X:=", x_loc, "Y:=", y_loc, "Z:=", "0mil")), _
+Array("NAME:PolylineSegments", _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 0, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 1, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 2, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 3, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex::= 4", "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 5, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 6, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex::= 7", "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 8, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 9, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 10, "NoOfPoints:=", 2), _
+Array("NAME:PLSegment", "SegmentType:=", "Line", "StartIndex:=", 11, "NoOfPoints:=", 2)), _
+Array("NAME:PolylineXSection", "XSectionType:=", _
+"None", "XSectionOrient:=", "Auto", "XSectionWidth:=", "0mm", _
+"XSectionTopWidth:=", _
+"0mm", "XSectionHeight:=", "0mm", "XSectionNumSegments:=", "0", _
+"XSectionBendType:=", _
+"Corner")), Array("NAME:Attributes", "Name:=", "L02_" & n, "Flags:=", _
+"Normal", "Color:=", _
+"(143 175 143)"), Array("NAME:MaterialProperties", "MaterialName:=", _
+"cond_material_name", "SolveInside:=", true))
+
+End If ' End of If Res_direction_var_value(n)
+
+' Add the bounding box calculations from the latest screenshot
+If n = 1 Then
+    Top_Box_string = 0
+    Bottom_Box_string = "y_loc - Res_side_length"
+    Left_Box_string = "x_loc - Res_side_length"
+    Right_Box_string = 0
+Else
+    Bottom_Box_string = "min(Bottom_Box_string, y_loc - Res_side_length)"
+    Left_Box_string = "min(Left_Box_string, x_loc - Res_side_length)"
+    Right_Box_string = 0 ' This line was in the screenshot, assuming it's meant to reset or be a placeholder
+End If
+
+Next ' End of For n loop
+
+' Make traces 3D
+oEditor.SweepAlongVector Array("NAME:Selections", "Selections:=", Cond_string, "NewPartsModelFlag:=", _
+"Model"), Array("NAME:VectorSweepParameters", "DraftAngle:=", "0Deg", _
+"DraftType:=", "Round", "CheckFaceIntersection:=", false, "SweepVectorX:=", "0mm", _
+"SweepVectorY:=", "0mm", "SweepVectorZ:=", "cond_h_trace")
+
+'Create main substrate layers (common to all launch orientations)
+'Create Bottom Core
+oEditor.CreateBox Array("NAME:BoxParameters", "XPosition:=", "0mil", _
+"YPosition:=", "Edge_wall_pullback + Launch_spacing + Launch_width", "ZPosition:=", "-Core_L02_L03_Height", "XSize:=", "Left_Box_string & -Edge_wall_pullback", "YSize:=", _
+"Bottom_Box_string - 2*Edge_wall_pullback - (Launch_spacing + Launch_width)", "ZSize:=", "Core_L02_L03_Height"), Array("NAME:Attributes", "Name:=", _
+"SUB_CORE_L02_L03_1", "Flags:=", "", "Color:=", _
+"(132 132 193)"), Array("NAME:MaterialProperties", "MaterialName:=", _
+"" & Chr(34) & core_L02_L03_material_name & Chr(34) & "", "SolveInside:=", true))
+
+'Create Prepreg
+oEditor.CreateBox Array("NAME:BoxParameters", "XPosition:=", "0mil", _
+"YPosition:=", "Edge_wall_pullback + Launch_spacing + Launch_width", "ZPosition:=", "-Prepreg_L01_L02_Height", "XSize:=", "Left_Box_string & -Edge_wall_pullback", "YSize:=", _
+"Bottom_Box_string - 2*Edge_wall_pullback - (Launch_spacing + Launch_width)", "ZSize:=", "Prepreg_L01_L02_Height"), Array("NAME:Attributes", "Name:=", _
+"PREPREG_L01_L02_1", "Flags:=", "", "Color:=", _
+"(132 132 193)"), Array("NAME:MaterialProperties", "MaterialName:=", _
+"" & Chr(34) & prepreg_L01_L02_material_name & Chr(34) & "", "SolveInside:=", true))
+
+'Create Top Core
+oEditor.CreateBox Array("NAME:BoxParameters", "XPosition:=", "0mil", _
+"YPosition:=", "Edge_wall_pullback + Launch_spacing + Launch_width", "ZPosition:=", "Prepreg_L01_L02_Height", "XSize:=", "Left_Box_string & -Edge_wall_pullback", "YSize:=", _
+"Bottom_Box_string - 2*Edge_wall_pullback - (Launch_spacing + Launch_width)", "ZSize:=", "Core_L01_L02_Height"), Array("NAME:Attributes", "Name:=", _
+"SUB_CORE_L01_L02_1", "Flags:=", "", "Color:=", _
+"(132 132 193)"), Array("NAME:MaterialProperties", "MaterialName:=", _
+"" & Chr(34) & core_L01_L02_material_name & Chr(34) & "", "SolveInside:=", true))
+
+'Create Bottom Ground
+oEditor.CreateBox Array("NAME:BoxParameters", "XPosition:=", "0mil", _
+"YPosition:=", "Edge_wall_pullback + Launch_spacing + Launch_width", "ZPosition:=", "-Core_L02_L03_Height - cond_h_bottom", "XSize:=", "Left_Box_string & -Edge_wall_pullback", "YSize:=", _
+"Bottom_Box_string - 2*Edge_wall_pullback - (Launch_spacing + Launch_width)", "ZSize:=", "cond_h_bottom"), Array("NAME:Attributes", "Name:=", _
+"L03_1", "Flags:=", "", "Color:=", _
+"(132 132 193)"), Array("NAME:MaterialProperties", "MaterialName:=", _
+"" & Chr(34) & cond_material_name & Chr(34) & "", "SolveInside:=", true))
+
+'Create Top Ground
+oEditor.CreateBox Array("NAME:BoxParameters", "XPosition:=", "0mil", _
+"YPosition:=", "Edge_wall_pullback + Launch_spacing + Launch_width", "ZPosition:=", "Prepreg_L01_L02_Height + Core_L01_L02_Height", "XSize:=", "Left_Box_string & -Edge_wall_pullback", "YSize:=", _
+"Bottom_Box_string - 2*Edge_wall_pullback - (Launch_spacing + Launch_width)", "ZSize:=", "cond_h_top"), Array("NAME:Attributes", "Name:=", _
+"L01_1", "Flags:=", "", "Color:=", _
+"(132 132 193)"), Array("NAME:MaterialProperties", "MaterialName:=", _
+"" & Chr(34) & cond_material_name & Chr(34) & "", "SolveInside:=", false))
+
+
+If Launch_orientation = 1 Then ' Launch_orientation = 1 means ports are on the left and right side
+    'The first input line will always be on the same side
+    'This creates the input line, the port, and the substrate for the input line
+    'Coupled Port coming off left and right side of model
+    'First coupled launch trace
+    oEditor.CreateBox Array("NAME:BoxParameters", "XPosition:=", "-Res_x_spacing1/2 - (Res_total_length1 + Res_trace_gap1)/4 + Res_trace_width1", "YPosition:=", _
+    "Launch_spacing", "ZPosition:=", "0mil", "XSize:=", _
+    "(Res_total_length1 + Res_trace_gap1)/4 + Res_trace_width1", "YSize:=", "Launch_width", _
+    "ZSize:=", "cond_h_trace"), Array("NAME:Attributes", "Name:=", "Port_Trace1a", _
+    "Flags:=", "", "Color:=", _
+    "(132 132 193)"), Array("NAME:MaterialProperties", "MaterialName:=", _
+    "" & Chr(34) & cond_material_name & Chr(34) & "", "SolveInside:=", false))
+
+    'First port trace
+    oEditor.CreateBox Array("NAME:BoxParameters", "XPosition:=", "-Res_x_spacing1/2 - ((Res_total_length1 + Res_trace_gap1)/4 + Res_trace_width1)", "YPosition:=", _
+    "Launch_spacing", "ZPosition:=", "0mil", "XSize:=", _
+    "-Lio", "YSize:=", "Wio", "ZSize:=", _
+    "cond_h_trace"), Array("NAME:Attributes", "Name:=", "Port_Trace1", _
+    "Flags:=", "", "Color:=", _
+    "(132 132 193)"), Array("NAME:MaterialProperties", "MaterialName:=", _
+    "" & Chr(34) & cond_material_name & Chr(34) & "", "SolveInside:=", false))
+
+    'Bottom Core for first port
+    oEditor.CreateBox Array("NAME:BoxParameters", "XPosition:=", "-Res_x_spacing1/2 - ((Res_total_length1 + Res_trace_gap1)/4 + Res_trace_width1)", "YPosition:=", _
+    "Launch_spacing + Wio - Port_Width/2", "ZPosition:=", "-Core_L02_L03_Height", "XSize:=", "-Lio", "YSize:=", "Port_Width", "ZSize:=", _
+    "Core_L01_L02_Height"), Array("NAME:Attributes", "Name:=", _
+    "SUB_CORE_L02_L03_2", "Flags:=", "", "Color:=", _
+    "(132 132 193)"), Array("NAME:MaterialProperties", "MaterialName:=", _
+    "" & Chr(34) & core_L02_L03_material_name & Chr(34) & "", "SolveInside:=", true))
+
+    'Prepreg for first port
+    oEditor.CreateBox Array("NAME:BoxParameters", "XPosition:=", "-Res_x_spacing1/2 - ((Res_total_length1 + Res_trace_gap1)/4 + Res_trace_width1)", "YPosition:=", _
+    "Launch_spacing + Wio - Port_Width/2", "ZPosition:=", "0mil", "XSize:=", "-Lio", "YSize:=", "Port_Width", "ZSize:=", _
+    "Prepreg_L01_L02_Height"), Array("NAME:Attributes", "Name:=", _
+    "SUB_PREP_L01_L02_2", "Flags:=", "", "Color:=", _
+    "(132 132 193)"), Array("NAME:MaterialProperties", "MaterialName:=", _
+    "" & Chr(34) & prepreg_L01_L02_material_name & Chr(34) & "", "SolveInside:=", true))
+
+    'Top Core for first port
+    oEditor.CreateBox Array("NAME:BoxParameters", "XPosition:=", "-Res_x_spacing1/2 - ((Res_total_length1 + Res_trace_gap1)/4 + Res_trace_width1)", "YPosition:=", _
+    "Launch_spacing + Wio - Port_Width/2", "ZPosition:=", "Prepreg_L01_L02_Height", "XSize:=", "-Lio", "YSize:=", "Port_Width", "ZSize:=", _
+    "Core_L01_L02_Height"), Array("NAME:Attributes", "Name:=", _
+    "SUB_CORE_L01_L02_2", "Flags:=", "", "Color:=", _
+    "(132 132 193)"), Array("NAME:MaterialProperties", "MaterialName:=", _
+    "" & Chr(34) & core_L01_L02_material_name & Chr(34) & "", "SolveInside:=", true))
+
+    'Bottom Ground for first port
+    oEditor.CreateBox Array("NAME:BoxParameters", "XPosition:=", "-Res_x_spacing1/2 - ((Res_total_length1 + Res_trace_gap1)/4 + Res_trace_width1)", "YPosition:=", _
+    "Launch_spacing + Wio - Port_Width/2", "ZPosition:=", "-Core_L02_L03_Height - cond_h_bottom", "XSize:=", "-Lio", "YSize:=", "Port_Width", "ZSize:=", _
+    "cond_h_bottom"), Array("NAME:Attributes", "Name:=", _
+    "L03_2", "Flags:=", "", "Color:=", _
+    "(132 132 193)"), Array("NAME:MaterialProperties", "MaterialName:=", _
+    "" & Chr(34) & cond_material_name & Chr(34) & "", "SolveInside:=", false))
+
+    'Top Ground for first port
+    oEditor.CreateBox Array("NAME:BoxParameters", "XPosition:=", "-Res_x_spacing1/2 - ((Res_total_length1 + Res_trace_gap1)/4 + Res_trace_width1)", "YPosition:=", _
+    "Launch_spacing + Wio - Port_Width/2", "ZPosition:=", "Prepreg_L01_L02_Height + Core_L01_L02_Height", "XSize:=", "-Lio", "YSize:=", "Port_Width", "ZSize:=", _
+    "cond_h_top"), Array("NAME:Attributes", "Name:=", _
+    "L01_2", "Flags:=", "", "Color:=", _
+    "(132 132 193)"), Array("NAME:MaterialProperties", "MaterialName:=", _
+    "" & Chr(34) & cond_material_name & Chr(34) & "", "SolveInside:=", false))
+
+    'Rectangle for first port
+    oEditor.CreateRectangle Array("NAME:RectangleParameters", "IsCovered:=", _
+    true, "XStart:=", "-Res_x_spacing1/2 - ((Res_total_length1 + Res_trace_gap1)/4 + Res_trace_width1) - Lio", "YStart:=", _
+    "Launch_spacing + Wio - Port_Width/2", "ZStart:=", "-Core_L02_L03_Height", "Width:=", _
+    "Lio", "Height:=", "Port_Width", "WhichAxis:=", "X"), Array("NAME:Attributes", "Name:=", _
+    "Port1", "Flags:=", "", "Color:=", _
+    "(132 132 193)", "Transparency:=", 0.8, "PartCoordinateSystem:=", _
+    "Global", "MaterialValue:=", "" & Chr(34) & "air" & Chr(34) & "", "SolveInside:=", _
+    true))
+
+    ' Commenting out msgbox calls as per instructions to avoid alerts/confirms
+    ' msgbox -Res_x_spacing_var_value(1)/2
+    ' (Res_total_length_var_value(1)+Res_trace_gap_var_value(1))/4+Res_trace_width_var_value(1)-Lio_value
+
+    ' msgbox Launch_spacing_value+Wio_value/2
+
+    ' msgbox -
+    ' (Res_total_length_var_value(1)+Res_trace_gap_var_value(1))/4+Res_trace_width_var_value(1) _
+    ' /2+Tap_location_value
+
+    'Assign first port
+    Set oModule = oDesign.GetModule("BoundarySetup")
+    oModule.AssignWavePort Array("NAME:Port1", "Objects:=", _
+    Array("Port1"), "NumModes:=", _
+    1, "RenormalizeAllTerminals:=", true, "UseLineAlignment:=", _
+    true, "DeembedDist:=", "Lio", Array("NAME:Modes", _
+    Array("NAME:Mode1", "ModeNum:=", 1, "UseIntLine:=", _
+    true, "XStart:=", "Res_x_spacing_var_value(1)*XYSpacing_Scale/2 - (Res_total_length_var_value(1)+Res_trace_gap_var_value(1))/4+Res_trace_width_var_value(1)-Lio_value", "YStart:=", _
+    "Launch_spacing_value+Wio_value/2", "ZStart:=", "-Core_L02_L03_Height"), "End:=", Array("X:=", _
+    "Res_x_spacing_var_value(1)*XYSpacing_Scale/2 - (Res_total_length_var_value(1)+Res_trace_gap_var_value(1))/4+Res_trace_width_var_value(1)-Lio_value", "Y:=", _
+    "Launch_spacing_value+Wio_value/2", "Z:=", "0mil"), "CharImp:=", "Zpi", _
+    "AlignmentGroup:=", 0, _
+    "RenormImp:=", "50ohm")), "ShowReporterFilter:=", false, _
+    "ReporterFilter:=", Array( _
+    true), "UseAnalyticAlignment:=", false)
+
+    'Unite bottom cores (for Launch_orientation = 1)
+    oEditor.Unite Array("NAME:Selections", "Selections:=", "SUB_CORE_L02_L03_1,SUB_CORE_L02_L03_2"), Array("NAME:UniteParameters", _
+    "KeepOriginals:=", _
+    false)
+
+    'Unite prepregs (for Launch_orientation = 1)
+    oEditor.Unite Array("NAME:Selections", "Selections:=", "SUB_PREP_L01_L02_1,SUB_PREP_L01_L02_2"), Array("NAME:UniteParameters", _
+    "KeepOriginals:=", _
+    false)
+
+    'Unite top cores (for Launch_orientation = 1)
+    oEditor.Unite Array("NAME:Selections", "Selections:=", "SUB_CORE_L01_L02_1,SUB_CORE_L01_L02_2"), Array("NAME:UniteParameters", _
+    "KeepOriginals:=", _
+    false)
+
+ElseIf Launch_orientation = 2 Then
+    ' Launch_orientation = 2 means ports are on the top side
+    ' Update box size
+    Left_Box_string = "min(" & Left_Box_string & ",-Res_x_spacing1/2-Res_side_length-(Launch_spacing+Launch_width))"
+
+    'Bottom Core for first port (for Launch_orientation = 2)
+    oEditor.CreateBox Array("NAME:BoxParameters", "XPosition:=", "-Res_x_spacing1/2 - ((Res_total_length1 + Res_trace_gap1)/4 + Res_trace_width1) - Launch_spacing - Wio/2 + Port_Width/2", "YPosition:=", _
+    "0mil", "ZPosition:=", "-Core_L02_L03_Height", "XSize:=", "-Port_Width", "YSize:=", _
+    "Lio", "ZSize:=", _
+    "Core_L02_L03_Height"), Array("NAME:Attributes", "Name:=", _
+    "SUB_CORE_L02_L03_2", "Flags:=", "", "Color:=", _
+    "(132 132 193)", "Transparency:=", 0.8, "PartCoordinateSystem:=", _
+    "Global", "MaterialValue:=", "" & Chr(34) & core_L02_L03_material_name & Chr(34) & "", "SolveInside:=", _
+    true))
+
+    'Prepreg for first port (for Launch_orientation = 2)
+    oEditor.CreateBox Array("NAME:BoxParameters", "XPosition:=", "-Res_x_spacing1/2 - ((Res_total_length1 + Res_trace_gap1)/4 + Res_trace_width1) - Launch_spacing - Wio/2 + Port_Width/2", "YPosition:=", _
+    "0mil", "ZPosition:=", "0mil", "XSize:=", "-Port_Width", "YSize:=", _
+    "Lio", "ZSize:=", _
+    "Prepreg_L01_L02_Height"), Array("NAME:Attributes", "Name:=", _
+    "SUB_PREP_L01_L02_2", "Flags:=", "", "Color:=", _
+    "(132 132 193)", "Transparency:=", 0.8, "PartCoordinateSystem:=", _
+    "Global", "MaterialValue:=", "" & Chr(34) & prepreg_L01_L02_material_name & Chr(34) & "", "SolveInside:=", _
+    true))
+
+    'Top Core for first port (for Launch_orientation = 2)
+    oEditor.CreateBox Array("NAME:BoxParameters", "XPosition:=", "-Res_x_spacing1/2 - ((Res_total_length1 + Res_trace_gap1)/4 + Res_trace_width1) - Launch_spacing - Wio/2 + Port_Width/2", "YPosition:=", _
+    "0mil", "ZPosition:=", "Prepreg_L01_L02_Height", "XSize:=", "-Port_Width", "YSize:=", _
+    "Lio", "ZSize:=", _
+    "Core_L01_L02_Height"), Array("NAME:Attributes", "Name:=", _
+    "SUB_CORE_L01_L02_2", "Flags:=", "", "Color:=", _
+    "(132 132 193)", "Transparency:=", 0.8, "PartCoordinateSystem:=", _
+    "Global", "MaterialValue:=", "" & Chr(34) & core_L01_L02_material_name & Chr(34) & "", "SolveInside:=", _
+    true))
+
+    'Bottom Ground for first port (for Launch_orientation = 2)
+    oEditor.CreateBox Array("NAME:BoxParameters", "XPosition:=", "-Res_x_spacing1/2 - ((Res_total_length1 + Res_trace_gap1)/4 + Res_trace_width1) - Launch_spacing - Wio/2 + Port_Width/2", "YPosition:=", _
+    "0mil", "ZPosition:=", "-Core_L02_L03_Height - cond_h_bottom", "XSize:=", "-Port_Width", "YSize:=", _
+    "Lio", "ZSize:=", _
+    "-cond_h_bottom"), Array("NAME:Attributes", "Name:=", _
+    "L03_2", "Flags:=", "", "Color:=", _
+    "(132 132 193)", "Transparency:=", 0.8, "PartCoordinateSystem:=", _
+    "Global", "MaterialValue:=", "" & Chr(34) & cond_material_name & Chr(34) & "", "SolveInside:=", _
+    false))
+
+    'Top Ground for first port (for Launch_orientation = 2)
+    oEditor.CreateBox Array("NAME:BoxParameters", "XPosition:=", "-Res_x_spacing1/2 - ((Res_total_length1 + Res_trace_gap1)/4 + Res_trace_width1) - Launch_spacing - Wio/2 + Port_Width/2", "YPosition:=", _
+    "0mil", "ZPosition:=", "Prepreg_L01_L02_Height + Core_L01_L02_Height", "XSize:=", "-Port_Width", "YSize:=", _
+    "Lio", "ZSize:=", _
+    "cond_h_top"), Array("NAME:Attributes", "Name:=", _
+    "L01_2", "Flags:=", "", "Color:=", _
+    "(132 132 193)", "Transparency:=", 0.8, "PartCoordinateSystem:=", _
+    "Global", "MaterialValue:=", "" & Chr(34) & cond_material_name & Chr(34) & "", "SolveInside:=", _
+    false))
+
+    'Rectangle for first port (for Launch_orientation = 2)
+    oEditor.CreateRectangle Array("NAME:RectangleParameters", "IsCovered:=", _
+    true, "XStart:=", "-Res_x_spacing1/2 - ((Res_total_length1 + Res_trace_gap1)/4 + Res_trace_width1) - Launch_spacing - Wio/2 + Port_Width/2", "YStart:=", _
+    "Lio", "ZStart:=", "-Core_L02_L03_Height", "Width:=", _
+    "-Port_Width", "Height:=", "Core_L01_L02_Height + Prepreg_L01_L02_Height + Core_L01_L02_Height", "WhichAxis:=", "Y"), Array("NAME:Attributes", "Name:=", _
+    "Port1", "Flags:=", "", "Color:=", _
+    "(132 132 193)", "Transparency:=", 0.8, "PartCoordinateSystem:=", _
+    "Global", "MaterialValue:=", "" & Chr(34) & "air" & Chr(34) & "", "SolveInside:=", _
+    true))
+
+    'Assign first port (for Launch_orientation = 2)
+    Set oModule = oDesign.GetModule("BoundarySetup")
+    oModule.AssignWavePort Array("NAME:Port1", "Objects:=", _
+    Array("Port1"), "NumModes:=", _
+    1, "RenormalizeAllTerminals:=", true, "UseLineAlignment:=", _
+    true, "DeembedDist:=", "Lio", Array("NAME:Modes", _
+    Array("NAME:Mode1", "ModeNum:=", 1, "UseIntLine:=", _
+    true, "XStart:=", "-Res_x_spacing_var_value(1)*XYSpacing_Scale/2 - ((Res_total_length_var_value(1)+Res_trace_gap_var_value(1))/4+Res_trace_width_var_value(1)-Launch_spacing-Wio/2+Port_Width/2)", "YStart:=", _
+    "Lio_value", "ZStart:=", "-Core_L02_L03_Height"), "End:=", Array("X:=", _
+    "-Res_x_spacing_var_value(1)*XYSpacing_Scale/2 - ((Res_total_length_var_value(1)+Res_trace_gap_var_value(1))/4+Res_trace_width_var_value(1)-Launch_spacing-Wio/2+Port_Width/2)", "Y:=", _
+    "Lio_value", "Z:=", "0mil"), "CharImp:=", "Zpi", _
+    "AlignmentGroup:=", 0, _
+    "RenormImp:=", "50ohm")), "ShowReporterFilter:=", false, _
+    "ReporterFilter:=", Array( _
+    true), "UseAnalyticAlignment:=", false)
+
+    'Unite operations specific to Launch_orientation = 2
+    oEditor.Unite Array("NAME:Selections", "Selections:=", "L01_1,L01_1"), Array("NAME:UniteParameters", _
+    "KeepOriginals:=", _
+    false)
+
+    oEditor.Unite Array("NAME:Selections", "Selections:=", "L03_1,L03_1"), Array("NAME:UniteParameters", _
+    "KeepOriginals:=", _
+    false)
+
+    oEditor.Unite Array("NAME:Selections", "Selections:=", "SUB_CORE_L02_L03_1,SUB_CORE_L02_L03_1"), Array("NAME:UniteParameters", _
+    "KeepOriginals:=", _
+    false)
+
+    oEditor.Unite Array("NAME:Selections", "Selections:=", "SUB_CORE_L01_L02_1,SUB_CORE_L01_L02_1"), Array("NAME:UniteParameters", _
+    "KeepOriginals:=", _
+    false)
+
+    oEditor.Unite Array("NAME:Selections", "Selections:=", "SUB_PREP_L01_L02_1,SUB_PREP_L01_L02_1"), Array("NAME:UniteParameters", _
+    "KeepOriginals:=", _
+    false)
+
+Else ' Invalid Launch_orientation
+    Msgbox "Invalid Launch_orientation. Must be 1 for sides or 2 for top."
+End If ' End of If Launch_orientation
+
+'Unite bottom cores (common unite operation for all launch orientations)
+oEditor.Unite Array("NAME:Selections", "Selections:=", "SUB_CORE_L02_L03_1,SUB_CORE_L02_L03_2"), Array("NAME:UniteParameters", _
+"KeepOriginals:=", _
+false)
+
+'Unite prepregs (common unite operation for all launch orientations)
+oEditor.Unite Array("NAME:Selections", "Selections:=", "SUB_PREP_L01_L02_1,SUB_PREP_L01_L02_2"), Array("NAME:UniteParameters", _
+"KeepOriginals:=", _
+false)
+
+'Unite top cores (common unite operation for all launch orientations)
+oEditor.Unite Array("NAME:Selections", "Selections:=", "SUB_CORE_L01_L02_1,SUB_CORE_L01_L02_2"), Array("NAME:UniteParameters", _
+"KeepOriginals:=", _
+false)
+
+'Unite Top Ground (common unite operation for all launch orientations)
+oEditor.Unite Array("NAME:Selections", "Selections:=", "L01_1,L01_2"), Array("NAME:UniteParameters", _
+"KeepOriginals:=", _
+false)
+
+'Unite Bottom Ground (common unite operation for all launch orientations)
+oEditor.Unite Array("NAME:Selections", "Selections:=", "L03_1,L03_2"), Array("NAME:UniteParameters", _
+"KeepOriginals:=", _
+false)
+
+'Create solution setup
+Set oModule = oDesign.GetModule("AnalysisSetup")
+oModule.InsertSetup "HfssDriven", Array("NAME:Setup1", "Frequency:=", solution_freq, _
+"PortsOnly:=", false, "MaxDeltaS:=", CDbl(max_delta_s), "UseMatrixConv:=", false, _
+"MaximumPasses:=", num_passes, "MinimumPasses:=", 1, _
+"BasisOrder:=", 1, "DoLambdaRefine:=", true, "DoMaterialLambda:=", _
+true, "SetLambdaTarget:=", _
+0.3333, "UseMaxTetIncrease:=", false, "PortAccuracy:=", 2, _
+"UseABCONPort:=", _
+false, "SetPortMinMaxTri:=", false, "UseDomains:=", false, _
+"UseIterativeSolver:=", _
+false, "SaveRadFieldsOnly:=", false, "SaveAnyFields:=", true, _
+"NoAdditionalRefinementOnImport:=", _
+false)
+
+'Create solution setup for Setup1_0 (from screenshot)
+oModule.InsertSetup "HfssDriven", Array("NAME:Setup1_0", "Frequency:=", _
+solution_freq_11, "PortsOnly:=", _
+false, "MaxDeltaS:=", 0.01, "UseMatrixConv:=", false, "MaximumPasses:=", 4, _
+"MinimumPasses:=", _
+1, "MinConvergedPasses:=", 1, "PercentRefinement:=", percent_refine, _
+"IsEnabled:=", _
+true, Array("NAME:MeshLink", "Project:=", "This Project*", "Design:=", "This Design*", "Soln:=", _
+"Setup1 : LastAdaptive", Array("NAME:Params"), "ForceSourceToSolve:=", _
+false, "PreservePartnerSoln:=", _
+false, "PathRelativeTo:=", "TargetProject", "ApplyMeshOp:=", false, _
+"AdaptPort:=", _
+false), "BasisOrder:=", 1, "DoLambdaRefine:=", false, "DoMaterialLambda:=", _
+true, "SetLambdaTarget:=", _
+0.3333, "UseMaxTetIncrease:=", false, "PortAccuracy:=", 2, _
+"UseABCONPort:=", _
+false, "SetPortMinMaxTri:=", false, "UseDomains:=", false, _
+"UseIterativeSolver:=", false, _
+"SaveRadFieldsOnly:=", false, "SaveAnyFields:=", true, "NoAdditionalRefinementOnImport:=", false))
+
+'Create solution setup for Setup1_1 (from screenshot)
+oModule.InsertSetup "HfssDriven", Array("NAME:Setup1_1", "Frequency:=", _
+solution_freq_12, "PortsOnly:=", _
+false, "MaxDeltaS:=", 0.01, "UseMatrixConv:=", false, "MaximumPasses:=", 4, _
+"MinimumPasses:=", _
+1, "MinConvergedPasses:=", 1, "PercentRefinement:=", percent_refine, _
+"IsEnabled:=", _
+true, Array("NAME:MeshLink", "Project:=", "This Project*", "Design:=", "This Design*", "Soln:=", _
+"Setup1 : LastAdaptive", Array("NAME:Params"), "ForceSourceToSolve:=", _
+false, "PreservePartnerSoln:=", _
+false, "PathRelativeTo:=", "TargetProject", "ApplyMeshOp:=", false, _
+"AdaptPort:=", _
+false), "BasisOrder:=", 1, "DoLambdaRefine:=", false, "DoMaterialLambda:=", _
+true, "SetLambdaTarget:=", _
+0.3333, "UseMaxTetIncrease:=", false, "PortAccuracy:=", 2, _
+"UseABCONPort:=", _
+false, "SetPortMinMaxTri:=", false, "UseDomains:=", false, _
+"UseIterativeSolver:=", false, _
+"SaveRadFieldsOnly:=", false, "SaveAnyFields:=", true, "NoAdditionalRefinementOnImport:=", false))
+
+'Create solution setup for Setup1_2 (from screenshot)
+oModule.InsertSetup "HfssDriven", Array("NAME:Setup1_2", "AdaptMultipleFreqs:=", _
+true, Array("NAME:MultipleAdaptiveFreqsSetup", "Low:=", _
+start_freq, "High:=", end_freq), "MaxDeltaS:=", 0.01, "MaximumPasses:=", 10, _
+"MinimumPasses:=", _
+1, "MinConvergedPasses:=", 1, "PercentRefinement:=", 10, "IsEnabled:=", _
+true, Array("NAME:MeshLink", "Project:=", "This Project*", "Design:=", _
+"This Design*", "Soln:=", "Setup1 : LastAdaptive", Array("NAME:Params"), _
+"ForceSourceToSolve:=", false, "PreservePartnerSoln:=", _
+false, "PathRelativeTo:=", "TargetProject", "ApplyMeshOp:=", false, _
+"AdaptPort:=", _
+false), "BasisOrder:=", 1, "DoLambdaRefine:=", true, "DoMaterialLambda:=", _
+true, "SetLambdaTarget:=", _
+0.3333, "UseMaxTetIncrease:=", false, "PortAccuracy:=", 2, _
+"UseABCONPort:=", _
+false, "SetPortMinMaxTri:=", false, "UseDomains:=", false, _
+"UseIterativeSolver:=", _
+true, "IterativeResidual:=", _
+0.0001, "DDMSolverResidual:=", 0.0001, "SaveRadFieldsOnly:=", false, _
+"SaveAnyFields:=", _
+true, "IESolverType:=", "Auto", "LambdaTargetForIESolver:=", 0.15, _
+"UseDefaultLambdaTgtForIESolver:=", _
+true, "RayDensityPerWavelength:=", 4, "NumberOfBounces:=", 5, _
+"InfiniteSphereSetup:=", _
+-1, "SKIPSBResolveDuringAdaptivePasses:=", false))
+
+'Turn on material override
+oDesign.SetDesignSettings Array("NAME:Design Settings Data", "Allow Material Override:=", true)
+
+' For Cancel Buttons
+End If
+End If
+End If
+End If
+End If
