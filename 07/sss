@@ -1,0 +1,225 @@
+# =============================================================================
+#  8‑Pole Strip‑Line Band‑Pass Filter (ideal, no ports)
+#  ▪ IronPython 2.7 script for Ansys Electronics Desktop / HFSS 2023‑R2+
+#  ▪ Creates PEC resonator rings and an angled microstrip feed line
+#  ▪ Geometry is fully parametric for easy tuning
+# =============================================================================
+
+import ScriptEnv, math
+ScriptEnv.Initialize("Ansoft.ElectronicsDesktop")
+oDesktop = ScriptEnv.GetDesktop()
+oDesktop.RestoreWindow()               # ignores call if already visible
+oDesktop.NewProject()
+
+oProject = oDesktop.GetActiveProject()
+oProject.Rename("Filter8Pole_ideal", True)
+
+oDesign  = oProject.InsertDesign("HFSS", "8Pole", "DrivenModal", "")
+oEditor  = oDesign.SetActiveEditor("3D Modeler")
+oEditor.SetModelUnits(["NAME:Units Parameter", "Units:=", "mm", "Rescale:=", False])
+
+# ---- USER‑EDITABLE PARAMETERS ----------------------------------------------
+mil        = 0.0254                    # 1 mil in millimetres
+
+# Resonators (outer dimensions & trace width)
+typeA_OD   = 83.6   * mil              # square resonator outer side
+typeB_OW   = 73.352 * mil              # rectangular resonator outer width
+typeB_OH   = 93.47  * mil              # rectangular resonator outer height
+ringW      = 5      * mil              # ring conductor width
+
+# Inter‑resonator keep‑out (edge‑to‑edge)
+keepout    = 0.65                     # mm
+
+# Feed line + stubs
+feedW          = 0.7865               # mm
+feedAngleDeg   = -20.0                # rotation of centre feed
+stubW          = 0.10                 # mm
+stubL          = 1.430                # mm
+
+# Colours (r,g,b)
+colourA    = "(132 132 255)"
+colourB    = "(255 180  90)"
+colourFeed = "(255   0   0)"
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Helper: create a rectangular / square ring as a PEC sheet
+# ---------------------------------------------------------------------------
+def create_ring(xCtr, yCtr, outerW, outerH, name, colour):
+    """
+    Draw a hollow ring (outer – inner) centred at (xCtr,yCtr); z = 0
+    """
+    outer_name = name + "_Outer"
+    inner_name = name + "_Inner"
+
+    # --- outer rectangle ----------------------------------------------------
+    oEditor.CreateRectangle(
+        [
+            "NAME:RectangleParameters", "IsCovered:=", True,
+            "XStart:=", "{}mm".format(xCtr - outerW/2.0),
+            "YStart:=", "{}mm".format(yCtr - outerH/2.0),
+            "ZStart:=", "0mm",
+            "Width:=",  "{}mm".format(outerW),
+            "Height:=", "{}mm".format(outerH)
+        ],
+        [
+            "NAME:Attributes", "Name:=", outer_name, "Flags:=", "",
+            "Color:=", colour, "Transparency:=", 0,
+            "PartCoordinateSystem:=", "Global",
+            "MaterialName:=", "pec", "SolveInside:=", False
+        ])
+
+    # --- inner rectangle ----------------------------------------------------
+    oEditor.CreateRectangle(
+        [
+            "NAME:RectangleParameters", "IsCovered:=", True,
+            "XStart:=", "{}mm".format(xCtr - (outerW/2.0 - ringW)),
+            "YStart:=", "{}mm".format(yCtr - (outerH/2.0 - ringW)),
+            "ZStart:=", "0mm",
+            "Width:=",  "{}mm".format(outerW - 2*ringW),
+            "Height:=", "{}mm".format(outerH - 2*ringW)
+        ],
+        [
+            "NAME:Attributes", "Name:=", inner_name, "Flags:=", "",
+            "Color:=", colour, "Transparency:=", 0,
+            "PartCoordinateSystem:=", "Global",
+            "MaterialName:=", "pec", "SolveInside:=", False
+        ])
+
+    # Subtract inner from outer -> ring
+    oEditor.Subtract(
+        ["NAME:Selections", "Blank Parts:=", outer_name, "Tool Parts:=", inner_name],
+        ["NAME:SubtractParameters", "KeepOriginals:=", False])
+
+    # Rename result to requested name
+    oEditor.ChangeProperty(
+        ["NAME:AllTabs",
+         ["NAME:Geometry3DAttributeTab",
+          ["NAME:PropServers", outer_name],
+          ["NAME:ChangedProps", ["NAME:Name", "Value:=", name]]])
+
+
+# ---------------------------------------------------------------------------
+# Geometry grid (centres of resonators)
+# ---------------------------------------------------------------------------
+maxW = max(typeA_OD, typeB_OW)
+maxH = max(typeA_OD, typeB_OH)
+gapX = keepout + ringW
+gapY = keepout + ringW
+
+# x‑coordinates of four columns
+x = [0.0]*4
+x[1] = x[0] + (typeA_OD/2 + gapX + typeB_OW/2)
+x[2] = x[1] + (typeB_OW/2 + gapX + typeA_OD/2)
+x[3] = x[2] + (typeA_OD/2 + gapX + typeB_OW/2)
+
+yRow = (maxH/2) + (gapY/2)          # +Y for top row, –Y for mirrored bottom
+
+# ---------------------------------------------------------------------------
+# Build resonators (top row A‑B‑A‑B   bottom row mirrored B‑A‑B‑A)
+# ---------------------------------------------------------------------------
+create_ring(x[0],  yRow, typeA_OD, typeA_OD, "Res1", colourA)
+create_ring(x[1],  yRow, typeB_OW, typeB_OH, "Res2", colourB)
+create_ring(x[2],  yRow, typeA_OD, typeA_OD, "Res3", colourA)
+create_ring(x[3],  yRow, typeB_OW, typeB_OH, "Res4", colourB)
+
+create_ring(x[0], -yRow, typeB_OW, typeB_OH, "Res5", colourB)
+create_ring(x[1], -yRow, typeA_OD, typeA_OD, "Res6", colourA)
+create_ring(x[2], -yRow, typeB_OW, typeB_OH, "Res7", colourB)
+create_ring(x[3], -yRow, typeA_OD, typeA_OD, "Res8", colourA)
+
+# ---------------------------------------------------------------------------
+# Feed line (straight, then rotated) plus eight stubs
+# ---------------------------------------------------------------------------
+feedLen = x[3] + maxW/2 + 2*keepout   # extra margin beyond rightmost resonator
+
+oEditor.CreateRectangle(
+    ["NAME:RectangleParameters", "IsCovered:=", True,
+     "XStart:=", "-{}mm".format(feedLen/2),
+     "YStart:=", "-{}mm".format(feedW/2),
+     "ZStart:=", "0mm",
+     "Width:=",  "{}mm".format(feedLen),
+     "Height:=", "{}mm".format(feedW)],
+    ["NAME:Attributes", "Name:=", "FeedMain", "Flags:=", "",
+     "Color:=", colourFeed, "Transparency:=", 0,
+     "PartCoordinateSystem:=", "Global",
+     "MaterialName:=", "pec", "SolveInside:=", False])
+
+# Rotate main feed
+oEditor.Rotate(
+    ["NAME:Selections", "Selections:=", "FeedMain", "NewPartsModelFlag:=", "Model"],
+    ["NAME:RotateParameters", "RotateAxis:=", "Z",
+     "RotateAngle:=", "{}deg".format(feedAngleDeg)])
+
+# Build coupling stubs (perpendicular to feed)
+rad  = math.radians(feedAngleDeg)
+dx   = math.cos(rad)
+dy   = math.sin(rad)
+
+for i in range(8):
+    if   i == 0: sX, sY = x[0],  yRow
+    elif i == 1: sX, sY = x[1],  yRow
+    elif i == 2: sX, sY = x[2],  yRow
+    elif i == 3: sX, sY = x[3],  yRow
+    elif i == 4: sX, sY = x[0], -yRow
+    elif i == 5: sX, sY = x[1], -yRow
+    elif i == 6: sX, sY = x[2], -yRow
+    else:        sX, sY = x[3], -yRow
+
+    # projection of (sX,sY) onto infinite feed centre‑line
+    t  =  sX*dx + sY*dy
+    px = t*dx
+    py = t*dy
+
+    stub = "Stub{}".format(i+1)
+    # Draw stub centered on that point (before rotation)
+    oEditor.CreateRectangle(
+        ["NAME:RectangleParameters", "IsCovered:=", True,
+         "XStart:=", "{}mm".format(px),
+         "YStart:=", "{}mm".format(py),
+         "ZStart:=", "0mm",
+         "Width:=",  "{}mm".format(stubL),
+         "Height:=", "{}mm".format(stubW)],
+        ["NAME:Attributes", "Name:=", stub, "Flags:=", "",
+         "Color:=", colourFeed, "Transparency:=", 0,
+         "PartCoordinateSystem:=", "Global",
+         "MaterialName:=", "pec", "SolveInside:=", False])
+
+    # Rotate stub to be perpendicular to feed
+    oEditor.Rotate(
+        ["NAME:Selections", "Selections:=", stub, "NewPartsModelFlag:=", "Model"],
+        ["NAME:RotateParameters", "RotateAxis:=", "Z",
+         "RotateAngle:=", "{}deg".format(feedAngleDeg + 90)])
+
+    # Translate half‑length so stub touches feed edge
+    oEditor.Move(
+        ["NAME:Selections", "Selections:=", stub],
+        ["NAME:TranslateParameters",
+         "TranslateVectorX:=", "-{}mm".format(stubL/2),
+         "TranslateVectorY:=", "0mm", "TranslateVectorZ:=", "0mm"])
+
+# Unite feed main + all stubs
+all_parts = "FeedMain," + ",".join(["Stub{}".format(k) for k in range(1,9)])
+oEditor.Unite(
+    ["NAME:Selections", "Selections:=", all_parts],
+    ["NAME:UniteParameters", "KeepOriginals:=", False])
+
+# Rename resultant sheet to FeedLine
+oEditor.ChangeProperty(
+    ["NAME:AllTabs",
+     ["NAME:Geometry3DAttributeTab",
+      ["NAME:PropServers", "FeedMain"],
+      ["NAME:ChangedProps", ["NAME:Name", "Value:=", "FeedLine"]]])
+
+
+# ---------------------------------------------------------------------------
+# Save project and (optionally) quit
+# ---------------------------------------------------------------------------
+proj_dir = oDesktop.GetDirectory()
+oProject.SaveAs(proj_dir + "\\Filter8Pole_ideal.aedt", True)
+
+msg = "Ideal 8‑pole filter generated and saved to:\n{}".format(proj_dir)
+oDesktop.AddMessage("", "Script", 0, msg)   # 0 = Info in message manager
+# Comment out next line if you want to keep HFSS open
+# oDesktop.QuitApplication()
