@@ -1,0 +1,164 @@
+'======================================================================
+' 8-pole stripline filter - symmetric layout (photo 2025-07-07)
+' Jonathan WCSJCJ  –  HFSS 2024R1
+'======================================================================
+
+' ──────────────────────────────────────────────────────────────────────
+'  USER-EDITABLE VARIABLES  (mil unless otherwise stated)
+' ──────────────────────────────────────────────────────────────────────
+Dim OUT_A     : OUT_A      = 83.628    'outer square for Type A
+Dim GAP_A     : GAP_A      = 4.390     'feed gap in Type A
+Dim SLOT_A    : SLOT_A     = 29.29     'inner square side in Type A
+Dim SLOT_OFF  : SLOT_OFF   = 27.16     'offset of slot from outer left/top
+
+Dim OUT_Bx    : OUT_Bx     = 93.47     'outer x-len for Type B
+Dim OUT_By    : OUT_By     = 73.352    'outer y-len for Type B
+Dim GAP_B     : GAP_B      = 4.07      'feed gap in Type B
+Dim SLOT_Bx   : SLOT_Bx    = 19.02     'inner window x
+Dim SLOT_By   : SLOT_By    = 27.165    'inner window y
+Dim TRACE_W   : TRACE_W    = 0.65      'metal thickness (z)
+Dim Z_LEVEL   : Z_LEVEL    = 0         'all resonators on L02, adjust if req’d
+
+' centre-to-centre offsets extracted from photo
+Dim DX        : DX   : DX  = 111.0     'horizontal pitch Res2→Res3 (etc.)
+Dim DX2       : DX2  : DX2 = 20.47+OUT_A 'Res1→Res4 pitch
+Dim DY        : DY        = 83.628+11  'vertical pitch between rows
+
+' origin (will sit between Res3 & Res5 like in photo)
+Const ORGX = 0
+Const ORGY = 0
+
+' ──────────────────────────────────────────────────────────────────────
+'  HFSS boiler-plate
+' ──────────────────────────────────────────────────────────────────────
+Dim a, oAnsoftApp, oDesktop, oProject, oDesign, oEditor
+Set oAnsoftApp = CreateObject("AnsoftHfss.HfssScriptInterface")
+Set oDesktop   = oAnsoftApp.GetAppDesktop()
+oDesktop.RestoreWindow
+Set oProject   = oDesktop.NewProject
+oProject.InsertDesign "HFSS","Stripline_8Res_Tuto","DrivenModal",""
+Set oDesign    = oProject.GetActiveDesign
+Set oEditor    = oDesign.SetActiveEditor("3D Modeler")
+oEditor.SetModelUnits Array("NAME:Units Parameter","Units:=","mil","Rescale:=",false)
+
+' ──────────────────────────────────────────────────────────────────────
+'  HELPERS
+' ──────────────────────────────────────────────────────────────────────
+Function Box(name,x,y,z,dx,dy,dz)
+  oEditor.CreateBox Array("NAME:BoxParameters", _
+     "XPosition:=",CStr(x)&"mil","YPosition:=",CStr(y)&"mil","ZPosition:=",CStr(z)&"mil", _
+     "XSize:=",CStr(dx)&"mil","YSize:=",CStr(dy)&"mil","ZSize:=",CStr(dz)&"mil"), _
+     Array("NAME:Attributes","Name:=",name,"Flags:=","","Color:=","(255 140 0)", _
+           "Transparency:=",0,"PartCoordinateSystem:=","Global", _
+           "MaterialValue:=",Chr(34)&"copper"&Chr(34),"SolveInside:=",false)
+End Function
+
+Function Cut(blank, tool)
+  oEditor.Subtract Array("NAME:Selections","Blank Parts:=",blank,"Tool Parts:=",tool), _
+                   Array("NAME:SubtractParameters","KeepOriginals:=",false)
+End Function
+
+Sub Move(obj,dx,dy)
+  oEditor.Move Array("NAME:Selections","Selections:=",obj), _
+               Array("NAME:MoveParameters","XComponent:=",CStr(dx)&"mil", _
+                     "YComponent:=",CStr(dy)&"mil","ZComponent:=","0mil")
+End Sub
+
+Sub Rotate(obj,angleDeg)
+  oEditor.Rotate Array("NAME:Selections","Selections:=",obj), _
+                 Array("NAME:RotateParameters","CoordinateSystemID:=", -1, _
+                       "Axis:=","Z","Angle:=",CStr(angleDeg)&"deg")
+End Sub
+
+' ──────────────────────────────────────────────────────────────────────
+'  BUILD   TYPE A  (square ring with right-hand gap)
+' ──────────────────────────────────────────────────────────────────────
+Box "A_outer", -OUT_A/2, -OUT_A/2, Z_LEVEL, OUT_A, OUT_A, TRACE_W
+Box "A_slot" , -OUT_A/2+SLOT_OFF, -OUT_A/2+SLOT_OFF, Z_LEVEL, SLOT_A, SLOT_A, TRACE_W
+Cut "A_outer","A_slot"
+' open feed gap
+Box "A_gap"  , OUT_A/2-GAP_A, -OUT_A/2, Z_LEVEL, GAP_A, OUT_A, TRACE_W
+Cut "A_outer","A_gap"
+' A_outer is now full Type-A resonator
+Dim BaseA : BaseA = "A_outer"
+
+' ──────────────────────────────────────────────────────────────────────
+'  BUILD   TYPE B  (rectangular ring with left gap)
+' ──────────────────────────────────────────────────────────────────────
+Box "B_outer", -OUT_Bx/2, -OUT_By/2, Z_LEVEL, OUT_Bx, OUT_By, TRACE_W
+Box "B_slot" , -SLOT_Bx/2, -SLOT_By/2, Z_LEVEL, SLOT_Bx, SLOT_By, TRACE_W
+Cut "B_outer","B_slot"
+Box "B_gap"  , -OUT_Bx/2, -OUT_By/2+SLOT_By, Z_LEVEL, GAP_B, OUT_By-SLOT_By, TRACE_W
+Cut "B_outer","B_gap"
+Dim BaseB : BaseB = "B_outer"
+
+' ──────────────────────────────────────────────────────────────────────
+'  PLACE ALL 8 RESONATORS
+' ──────────────────────────────────────────────────────────────────────
+' Res labels:   (top row)   2   3   5   8
+'               (bot row)   1   4   7   6      ← matches your screen-print
+
+' --- top row ---
+oEditor.Duplicate     Array("NAME:Selections","Selections:=",BaseB), _
+                      Array("NAME:Duplicates","DuplicateCount:=","0") 'Res2
+Move "B_outer", ORGX-DX, ORGY+DY/2     'Res 2
+oEditor.ChangeProperty Array("NAME:AllTabs",Array("NAME:AttributesTab", _
+   Array("NAME:PropServers","B_outer"),Array("NAME:ChangedProps", _
+   Array("NAME:Name","Value:=","Res_2"))))
+
+oEditor.Duplicate     Array("NAME:Selections","Selections:=","Res_2"), _
+                      Array("NAME:Duplicates","DuplicateCount:=","0")   'Res3
+Move "Res_2_1", DX, 0
+Rotate "Res_2_1", 180
+oEditor.ChangeProperty Array("NAME:AllTabs",Array("NAME:AttributesTab", _
+   Array("NAME:PropServers","Res_2_1"),Array("NAME:ChangedProps", _
+   Array("NAME:Name","Value:=","Res_3"))))
+
+oEditor.Duplicate     Array("NAME:Selections","Selections:=",BaseA), _
+                      Array("NAME:Duplicates","DuplicateCount:=","0")   'Res5
+Move "A_outer_1", ORGX+DX, ORGY+DY/2
+oEditor.ChangeProperty Array("NAME:AllTabs",Array("NAME:AttributesTab", _
+   Array("NAME:PropServers","A_outer_1"),Array("NAME:ChangedProps", _
+   Array("NAME:Name","Value:=","Res_5"))))
+
+oEditor.Duplicate     Array("NAME:Selections","Selections:=","Res_5"), _
+                      Array("NAME:Duplicates","DuplicateCount:=","0")   'Res8
+Move "Res_5_1", DX, 0
+Rotate "Res_5_1", 180
+oEditor.ChangeProperty Array("NAME:AllTabs",Array("NAME:AttributesTab", _
+   Array("NAME:PropServers","Res_5_1"),Array("NAME:ChangedProps", _
+   Array("NAME:Name","Value:=","Res_8"))))
+
+' --- bottom row ---
+oEditor.Duplicate     Array("NAME:Selections","Selections:=",BaseA), _
+                      Array("NAME:Duplicates","DuplicateCount:=","0")   'Res1
+Move "A_outer_2", ORGX-DX-DX2/2, ORGY-DY/2
+oEditor.ChangeProperty Array("NAME:AllTabs",Array("NAME:AttributesTab", _
+   Array("NAME:PropServers","A_outer_2"),Array("NAME:ChangedProps", _
+   Array("NAME:Name","Value:=","Res_1"))))
+
+oEditor.Duplicate     Array("NAME:Selections","Selections:=","Res_1"), _
+                      Array("NAME:Duplicates","DuplicateCount:=","0")   'Res4
+Move "Res_1_1", DX2, 0
+Rotate "Res_1_1", 180
+oEditor.ChangeProperty Array("NAME:AllTabs",Array("NAME:AttributesTab", _
+   Array("NAME:PropServers","Res_1_1"),Array("NAME:ChangedProps", _
+   Array("NAME:Name","Value:=","Res_4"))))
+
+oEditor.Duplicate     Array("NAME:Selections","Selections:=",BaseB), _
+                      Array("NAME:Duplicates","DuplicateCount:=","0")   'Res7
+Move "B_outer_1", ORGX+DX, ORGY-DY/2
+Rotate "B_outer_1", 180
+oEditor.ChangeProperty Array("NAME:AllTabs",Array("NAME:AttributesTab", _
+   Array("NAME:PropServers","B_outer_1"),Array("NAME:ChangedProps", _
+   Array("NAME:Name","Value:=","Res_7"))))
+
+oEditor.Duplicate     Array("NAME:Selections","Selections:=","Res_7"), _
+                      Array("NAME:Duplicates","DuplicateCount:=","0")   'Res6
+Move "Res_7_1", DX, 0
+oEditor.ChangeProperty Array("NAME:AllTabs",Array("NAME:AttributesTab", _
+   Array("NAME:PropServers","Res_7_1"),Array("NAME:ChangedProps", _
+   Array("NAME:Name","Value:=","Res_6"))))
+
+' ──────────────────────────────────────────────────────────────────────
+MsgBox "8-Resonator layout generated successfully!",, "Done"
