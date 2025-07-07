@@ -1,0 +1,221 @@
+' ============================================================================
+'  8‑Pole Multi‑layer Strip‑line Band‑pass Filter (ideal model, no ports)
+'  ▪ Generates PEC sheet resonators + microstrip feed line only
+'  ▪ No air‑box, wave ports, vias or multilayer stack‑up
+'  ▪ Written for Ansys Electronics Desktop / HFSS 2024‑R1 (VBScript API)
+' ============================================================================
+
+' ----------  USER‑EDITABLE PARAMETERS  --------------------------------------
+Const mil             = 0.0254             ' 1 mil in millimetres
+' Resonator sizes
+Const typeA_OD        = 83.6  * mil        ' square outer dimension  (mm)
+Const typeB_OW        = 73.352 * mil       ' rectangle outer width   (mm)
+Const typeB_OH        = 93.47  * mil       ' rectangle outer height  (mm)
+Const ringW           = 5      * mil       ' conductor width for ALL rings (mm)
+
+' Inter‑resonator spacing
+Const keepout         = 0.65               ' mm gap between outer edges
+
+' Feed‑line
+Const feedW           = 0.7865             ' mm      (trace_width_io )
+Const feedAngleDeg    = -20                ' rotation about Z (deg)
+' Coupling stubs (one per resonator)
+Const stubW           = 0.10               ' mm      (trace_width_io1)
+Const stubL           = 1.430              ' mm      (stub_length_io )
+
+' Colours (RGB)
+Const colourA         = "(132 132 255)"    ' Type A resonators
+Const colourB         = "(255 180  90)"    ' Type B resonators
+Const colourFeed      = "(255   0   0)"    ' Feed line
+' ---------------------------------------------------------------------------
+
+
+' =========  BOILERPLATE – open HFSS, create project & design  ===============
+Dim oApp, oDesktop, oProject, oDesign, oEditor
+Set oApp      = CreateObject("Ansoft.ElectronicsDesktop")       ' launch AEDT
+oApp.RestoreWindow
+Set oDesktop  = oApp.GetActiveDesktop
+oDesktop.NewProject
+Set oProject  = oDesktop.GetActiveProject
+oProject.Rename "Filter8Pole_ideal"
+Set oDesign   = oProject.InsertDesign("HFSS", "8Pole", "DrivenModal", "")
+Set oEditor   = oDesign.SetActiveEditor("3D Modeler")
+oDesign.SetSolutionType "Eigenmode"   ' keeps file small; you can change later
+
+
+' =========  HELPER SUBS  ====================================================
+Sub CreateRing(ByVal xCtr, ByVal yCtr, ByVal outerW, ByVal outerH, _
+               ByVal thickness, ByVal namePrefix, ByVal colourRGB)
+    ' Draws a rectangular/square ring (sheet) centred at (xCtr, yCtr)
+    Dim outerName, innerName
+    outerName = namePrefix & "_Outer"
+    innerName = namePrefix & "_Inner"
+
+    ' Outer rectangle --------------------------------------------------------
+    oEditor.CreateRectangle Array( _
+        "NAME:RectangleParameters", _
+        "IsCovered:=", True, _
+        "XStart:=", CStr(xCtr - outerW/2) & "mm", _
+        "YStart:=", CStr(yCtr - outerH/2) & "mm", _
+        "ZStart:=", "0mm", _
+        "Width:=",  CStr(outerW) & "mm", _
+        "Height:=", CStr(outerH) & "mm"), _
+        Array("NAME:Attributes", _
+        "Name:=", outerName, _
+        "Flags:=", "", _
+        "Color:=", colourRGB, _
+        "Transparency:=", 0, _
+        "PartCoordinateSystem:=", "Global", _
+        "MaterialName:=", "pec", _
+        "SurfaceMaterialName:=", "", _
+        "SolveInside:=", False)
+
+    ' Inner rectangle --------------------------------------------------------
+    oEditor.CreateRectangle Array( _
+        "NAME:RectangleParameters", _
+        "IsCovered:=", True, _
+        "XStart:=", CStr(xCtr - (outerW/2 - thickness)) & "mm", _
+        "YStart:=", CStr(yCtr - (outerH/2 - thickness)) & "mm", _
+        "ZStart:=", "0mm", _
+        "Width:=",  CStr(outerW - 2*thickness) & "mm", _
+        "Height:=", CStr(outerH - 2*thickness) & "mm"), _
+        Array("NAME:Attributes", _
+        "Name:=", innerName, _
+        "Flags:=", "", _
+        "Color:=", colourRGB, _
+        "Transparency:=", 0, _
+        "PartCoordinateSystem:=", "Global", _
+        "MaterialName:=", "pec", _
+        "SurfaceMaterialName:=", "", _
+        "SolveInside:=", False)
+
+    ' Subtract inner from outer to form ring ---------------------------------
+    oEditor.Subtract Array( _
+        "NAME:Selections", _
+        "Blank Parts:=", outerName, _
+        "Tool Parts:=", innerName), _
+        Array("NAME:SubtractParameters", "KeepOriginals:=", False)
+
+    ' Rename final object
+    oEditor.ChangeProperty Array("NAME:AllTabs", Array("NAME:Geometry3DAttributeTab", _
+        Array("NAME:PropServers", outerName), _
+        Array("NAME:ChangedProps", Array("NAME:Name", "Value:=", namePrefix))))
+End Sub
+' ---------------------------------------------------------------------------
+
+
+' =========  COMPUTE PLACEMENT GRID  =========================================
+Dim maxW, maxH, gapX, gapY
+maxW = typeA_OD                                ' wider of A/B in X
+If typeB_OW > maxW Then maxW = typeB_OW
+maxH = typeB_OH                                ' taller of A/B in Y
+If typeA_OD > maxH Then maxH = typeA_OD
+
+gapX = keepout + ringW
+gapY = keepout + ringW
+
+' X‑coordinates of the four columns (centres)
+Dim x(3)
+x(0) = 0
+x(1) = x(0) + (typeA_OD/2 + gapX + typeB_OW/2)
+x(2) = x(1) + (typeB_OW/2 + gapX + typeA_OD/2)
+x(3) = x(2) + (typeA_OD/2 + gapX + typeB_OW/2)
+
+' Y offset between rows
+Dim yRow
+yRow = (maxH/2) + (gapY/2)
+
+' =========  BUILD RESONATORS  ==============================================
+' Top row  (A B A B)
+CreateRing x(0),  yRow, typeA_OD, typeA_OD, ringW, "A1", colourA
+CreateRing x(1),  yRow, typeB_OW, typeB_OH, ringW, "B1", colourB
+CreateRing x(2),  yRow, typeA_OD, typeA_OD, ringW, "A2", colourA
+CreateRing x(3),  yRow, typeB_OW, typeB_OH, ringW, "B2", colourB
+
+' Bottom row (B A B A)  [mirror at Y = 0]
+CreateRing x(0), -yRow, typeB_OW, typeB_OH, ringW, "B3", colourB
+CreateRing x(1), -yRow, typeA_OD, typeA_OD, ringW, "A3", colourA
+CreateRing x(2), -yRow, typeB_OW, typeB_OH, ringW, "B4", colourB
+CreateRing x(3), -yRow, typeA_OD, typeA_OD, ringW, "A4", colourA
+
+
+' =========  FEED‑LINE AND COUPLING STUBS  ===================================
+' Draw straight feed centre‑line before rotation (along +X)
+Dim feedLen
+feedLen = x(3) + maxW/2 + 2*keepout           ' long enough to cover array
+
+oEditor.CreateRectangle Array( _
+    "NAME:RectangleParameters", "IsCovered:=", True, _
+    "XStart:=", "-" & CStr(feedLen/2) & "mm", "YStart:=", "-" & CStr(feedW/2) & "mm", _
+    "ZStart:=", "0mm", "Width:=", CStr(feedLen) & "mm", "Height:=", CStr(feedW) & "mm"), _
+    Array("NAME:Attributes", "Name:=", "FeedMain", "Flags:=", "", "Color:=", colourFeed, _
+    "Transparency:=", 0, "PartCoordinateSystem:=", "Global", "MaterialName:=", "pec", _
+    "SurfaceMaterialName:=", "", "SolveInside:=", False)
+
+' Rotate feed line about origin by feedAngleDeg around the Z‑axis
+oEditor.Rotate Array("NAME:Selections", "Selections:=", "FeedMain", _
+    "NewPartsModelFlag:=", "Model"), Array("NAME:RotateParameters", "RotateAxis:=", "Z", _
+    "RotateAngle:=", CStr(feedAngleDeg) & "deg")
+
+' --- Coupling stubs ---------------------------------------------------------
+Dim i, stubName, sX, sY
+For i = 0 To 7
+    ' pick resonator centre
+    Select Case i
+        Case 0: sX = x(0): sY =  yRow
+        Case 1: sX = x(1): sY =  yRow
+        Case 2: sX = x(2): sY =  yRow
+        Case 3: sX = x(3): sY =  yRow
+        Case 4: sX = x(0): sY = -yRow
+        Case 5: sX = x(1): sY = -yRow
+        Case 6: sX = x(2): sY = -yRow
+        Case 7: sX = x(3): sY = -yRow
+    End Select
+
+    ' project stub start point onto rotated feed centre‑line
+    ' For simplicity we assume feed passes through (0,0) at angle feedAngle
+    Dim rad, dx, dy, t
+    rad = feedAngleDeg * 3.14159265358979 / 180
+    dx  = Cos(rad):  dy = Sin(rad)
+    ' nearest point along infinite line r = t*<dx,dy> is t = (sX*dx + sY*dy)
+    t = (sX*dx + sY*dy)
+    Dim px, py
+    px = t*dx:  py = t*dy      ' point on feed centre
+
+    stubName = "Stub" & CStr(i+1)
+    oEditor.CreateRectangle Array( _
+        "NAME:RectangleParameters", "IsCovered:=", True, _
+        "XStart:=", CStr(px) & "mm", _
+        "YStart:=", CStr(py) & "mm", _
+        "ZStart:=", "0mm", _
+        "Width:=",  CStr(stubL) & "mm", _
+        "Height:=", CStr(stubW) & "mm"), _
+        Array("NAME:Attributes", "Name:=", stubName, "Flags:=", "", _
+        "Color:=", colourFeed, "Transparency:=", 0, "PartCoordinateSystem:=", "Global", _
+        "MaterialName:=", "pec", "SurfaceMaterialName:=", "", "SolveInside:=", False)
+
+    ' Rotate stub so it is perpendicular (i.e. +90 deg) to feed
+    oEditor.Rotate Array("NAME:Selections", "Selections:=", stubName, _
+        "NewPartsModelFlag:=", "Model"), _
+        Array("NAME:RotateParameters", "RotateAxis:=", "Z", _
+        "RotateAngle:=", CStr(feedAngleDeg + 90) & "deg")
+
+    ' Move stub end so it meets the feed edge
+    oEditor.Move Array("NAME:Selections", "Selections:=", stubName), _
+        Array("NAME:TranslateParameters", "TranslateVectorX:=", _
+        CStr(-stubL/2) & "mm", "TranslateVectorY:=", "0mm", "TranslateVectorZ:=", "0mm")
+Next
+
+' Union feed main + stubs into single sheet ----------------------------------
+oEditor.Unite Array("NAME:Selections", "Selections:=", "FeedMain,Stub1,Stub2,Stub3,Stub4,Stub5,Stub6,Stub7,Stub8"), _
+    Array("NAME:UniteParameters", "KeepOriginals:=", False)
+
+oEditor.ChangeProperty Array("NAME:AllTabs", Array("NAME:Geometry3DAttributeTab", _
+    Array("NAME:PropServers", "FeedMain"), _
+    Array("NAME:ChangedProps", Array("NAME:Name", "Value:=", "FeedLine"))))
+
+
+' =========  SAVE & CLEAN EXIT  ==============================================
+oProject.SaveAs oDesktop.GetDirectory & "\Filter8Pole_ideal.aedt", True
+MsgBox "Ideal 8‑pole filter generated and saved.", vbInformation, "HFSS VBScript"
+oApp.Quit
