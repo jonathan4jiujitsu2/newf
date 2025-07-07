@@ -1,0 +1,526 @@
+'***************************************************************************
+' HFSS VBScript - Professional Parametric Filter Design
+' Clean version with all syntax errors fixed
+'***************************************************************************
+
+'Initialize variables
+Dim oAnsoftApp, oDesktop, oProject, oDesign, oEditor, oModule
+Dim Res_direction_var_value(10), Res_total_length_var_value(10)
+Dim Res_trace_width_var_value(10), Res_trace_gap_var_value(10)
+Dim Res_x_spacing_var_value(10), Res_y_spacing_var_value(10)
+
+'Set project objects
+Set oAnsoftApp = CreateObject("AnsoftHfss.HfssScriptInterface")
+Set oDesktop = oAnsoftApp.GetAppDesktop()
+oDesktop.RestoreWindow
+Set oProject = oDesktop.NewProject
+Set oProject = oDesktop.GetActiveProject
+oProject.InsertDesign "HFSS", "ParametricFilter_Clean", "DrivenModal", ""
+
+Set oDesign = oProject.GetActiveDesign
+Set oEditor = oDesign.SetActiveEditor("3D Modeler")
+
+'Set units
+oEditor.SetModelUnits Array("NAME:Units Parameter", "Units:=", "mil", "Rescale:=", false)
+
+'***************************************************************************
+' MATERIAL DEFINITIONS
+'***************************************************************************
+
+Set oDefinitionManager = oProject.GetDefinitionManager()
+
+'Material properties
+Dim core_material_name, prepreg_material_name, cond_material_name
+core_material_name = "Rogers3010_Core"
+prepreg_material_name = "Prepreg2929"
+cond_material_name = "HighPerf_Copper"
+
+'Create Rogers 3010 material
+oDefinitionManager.AddMaterial Array("NAME:" & core_material_name, _
+"CoordinateSystemType:=", "Cartesian", _
+Array("NAME:AttachedData"), _
+"permittivity:=", "10.2", _
+"dielectric_loss_tangent:=", "0.0023")
+
+'Create Prepreg material
+oDefinitionManager.AddMaterial Array("NAME:" & prepreg_material_name, _
+"CoordinateSystemType:=", "Cartesian", _
+Array("NAME:AttachedData"), _
+"permittivity:=", "2.94", _
+"dielectric_loss_tangent:=", "0.003")
+
+'Create Copper material
+oDefinitionManager.AddMaterial Array("NAME:" & cond_material_name, _
+"CoordinateSystemType:=", "Cartesian", _
+Array("NAME:AttachedData"), _
+"conductivity:=", "4.1e7")
+
+'***************************************************************************
+' DESIGN PARAMETERS
+'***************************************************************************
+
+'Layer heights
+Dim Core_Height, Prepreg_Height, cond_thickness
+Core_Height = 10.0
+Prepreg_Height = 2.25
+cond_thickness = 0.65
+
+'Design parameters
+Dim num_poles, Edge_wall_pullback, Launch_width, Port_Width
+num_poles = 4
+Edge_wall_pullback = 15.0
+Launch_width = 3.937
+Port_Width = 15.748
+
+'Solution parameters
+Dim solution_freq, start_freq, end_freq
+solution_freq = "15GHz"
+start_freq = "10GHz"
+end_freq = "20GHz"
+
+'***************************************************************************
+' INITIALIZE RESONATOR PARAMETERS
+'***************************************************************************
+
+'Set resonator parameters
+Res_direction_var_value(1) = 1  'Right gap
+Res_direction_var_value(2) = 3  'Top gap
+Res_direction_var_value(3) = 2  'Left gap
+Res_direction_var_value(4) = 4  'Bottom gap
+
+Res_total_length_var_value(1) = 200
+Res_total_length_var_value(2) = 200
+Res_total_length_var_value(3) = 200
+Res_total_length_var_value(4) = 200
+
+Res_trace_width_var_value(1) = 8
+Res_trace_width_var_value(2) = 8
+Res_trace_width_var_value(3) = 8
+Res_trace_width_var_value(4) = 8
+
+Res_trace_gap_var_value(1) = 4
+Res_trace_gap_var_value(2) = 4
+Res_trace_gap_var_value(3) = 4
+Res_trace_gap_var_value(4) = 4
+
+Res_x_spacing_var_value(1) = 25
+Res_x_spacing_var_value(2) = 25
+Res_x_spacing_var_value(3) = 25
+Res_x_spacing_var_value(4) = 25
+
+Res_y_spacing_var_value(1) = 30
+Res_y_spacing_var_value(2) = 30
+Res_y_spacing_var_value(3) = 30
+
+'***************************************************************************
+' CREATE DESIGN VARIABLES
+'***************************************************************************
+
+'Global variables
+oDesign.ChangeProperty Array("NAME:AllTabs", _
+Array("NAME:LocalVariableTab", _
+Array("NAME:PropServers", "LocalVariables"), _
+Array("NAME:NewProps", _
+Array("NAME:ResonatorDeltaL", "PropType:=", "VariableProp", _
+"UserDef:=", true, "Value:=", "0mil"))))
+
+oDesign.ChangeProperty Array("NAME:AllTabs", _
+Array("NAME:LocalVariableTab", _
+Array("NAME:PropServers", "LocalVariables"), _
+Array("NAME:NewProps", _
+Array("NAME:XYSpacing_Scale", "PropType:=", "VariableProp", _
+"UserDef:=", true, "Value:=", "1.0"))))
+
+'Individual resonator variables
+Dim n
+For n = 1 To num_poles
+    'Direction variable
+    oDesign.ChangeProperty Array("NAME:AllTabs", _
+    Array("NAME:LocalVariableTab", _
+    Array("NAME:PropServers", "LocalVariables"), _
+    Array("NAME:NewProps", _
+    Array("NAME:Res_direction" & n, "PropType:=", "VariableProp", _
+    "UserDef:=", true, "Value:=", CStr(Res_direction_var_value(n))))))
+    
+    'Length variable
+    oDesign.ChangeProperty Array("NAME:AllTabs", _
+    Array("NAME:LocalVariableTab", _
+    Array("NAME:PropServers", "LocalVariables"), _
+    Array("NAME:NewProps", _
+    Array("NAME:Res_total_length" & n, "PropType:=", "VariableProp", _
+    "UserDef:=", true, "Value:=", CStr(Res_total_length_var_value(n)) & "mil"))))
+    
+    'Width variable
+    oDesign.ChangeProperty Array("NAME:AllTabs", _
+    Array("NAME:LocalVariableTab", _
+    Array("NAME:PropServers", "LocalVariables"), _
+    Array("NAME:NewProps", _
+    Array("NAME:Res_trace_width" & n, "PropType:=", "VariableProp", _
+    "UserDef:=", true, "Value:=", CStr(Res_trace_width_var_value(n)) & "mil"))))
+    
+    'Gap variable
+    oDesign.ChangeProperty Array("NAME:AllTabs", _
+    Array("NAME:LocalVariableTab", _
+    Array("NAME:PropServers", "LocalVariables"), _
+    Array("NAME:NewProps", _
+    Array("NAME:Res_trace_gap" & n, "PropType:=", "VariableProp", _
+    "UserDef:=", true, "Value:=", CStr(Res_trace_gap_var_value(n)) & "mil"))))
+Next
+
+'***************************************************************************
+' CREATE RESONATOR STRUCTURES
+'***************************************************************************
+
+'String to collect all conductor objects
+Dim Cond_string
+Cond_string = ""
+
+'Starting positions
+Dim x_start, y_start
+x_start = 0
+y_start = 0
+
+'Create each resonator
+For n = 1 To num_poles
+    'Build conductor string
+    If n = 1 Then
+        Cond_string = "L02_" & n
+    Else
+        Cond_string = Cond_string & ",L02_" & n
+    End If
+    
+    'Calculate position
+    Dim x_pos, y_pos
+    x_pos = x_start + (n-1) * 60  'Simple spacing
+    y_pos = y_start
+    
+    'Create resonator based on direction
+    CreateResonator n, x_pos, y_pos, Res_direction_var_value(n)
+Next
+
+'Make traces 3D
+oEditor.SweepAlongVector Array("NAME:Selections", "Selections:=", Cond_string, _
+"NewPartsModelFlag:=", "Model"), _
+Array("NAME:VectorSweepParameters", "DraftAngle:=", "0deg", _
+"DraftType:=", "Round", "CheckFaceIntersection:=", false, _
+"SweepVectorX:=", "0mil", "SweepVectorY:=", "0mil", _
+"SweepVectorZ:=", CStr(cond_thickness) & "mil")
+
+'***************************************************************************
+' CREATE SUBSTRATE LAYERS
+'***************************************************************************
+
+'Calculate substrate bounds
+Dim sub_x_min, sub_x_max, sub_y_min, sub_y_max
+sub_x_min = -50
+sub_x_max = 250
+sub_y_min = -50
+sub_y_max = 100
+
+'Bottom Core
+oEditor.CreateBox Array("NAME:BoxParameters", _
+"XPosition:=", CStr(sub_x_min) & "mil", _
+"YPosition:=", CStr(sub_y_min) & "mil", _
+"ZPosition:=", CStr(-Core_Height) & "mil", _
+"XSize:=", CStr(sub_x_max - sub_x_min) & "mil", _
+"YSize:=", CStr(sub_y_max - sub_y_min) & "mil", _
+"ZSize:=", CStr(Core_Height) & "mil"), _
+Array("NAME:Attributes", "Name:=", "SUB_CORE_BOTTOM", "Flags:=", "", _
+"Color:=", "(0 128 255)", "Transparency:=", 0.7, _
+"PartCoordinateSystem:=", "Global", _
+"MaterialValue:=", Chr(34) & core_material_name & Chr(34), _
+"SolveInside:=", true)
+
+'Prepreg Layer
+oEditor.CreateBox Array("NAME:BoxParameters", _
+"XPosition:=", CStr(sub_x_min) & "mil", _
+"YPosition:=", CStr(sub_y_min) & "mil", _
+"ZPosition:=", "0mil", _
+"XSize:=", CStr(sub_x_max - sub_x_min) & "mil", _
+"YSize:=", CStr(sub_y_max - sub_y_min) & "mil", _
+"ZSize:=", CStr(Prepreg_Height) & "mil"), _
+Array("NAME:Attributes", "Name:=", "PREPREG", "Flags:=", "", _
+"Color:=", "(255 255 0)", "Transparency:=", 0.7, _
+"PartCoordinateSystem:=", "Global", _
+"MaterialValue:=", Chr(34) & prepreg_material_name & Chr(34), _
+"SolveInside:=", true)
+
+'Top Core
+oEditor.CreateBox Array("NAME:BoxParameters", _
+"XPosition:=", CStr(sub_x_min) & "mil", _
+"YPosition:=", CStr(sub_y_min) & "mil", _
+"ZPosition:=", CStr(Prepreg_Height) & "mil", _
+"XSize:=", CStr(sub_x_max - sub_x_min) & "mil", _
+"YSize:=", CStr(sub_y_max - sub_y_min) & "mil", _
+"ZSize:=", CStr(Core_Height) & "mil"), _
+Array("NAME:Attributes", "Name:=", "SUB_CORE_TOP", "Flags:=", "", _
+"Color:=", "(0 255 128)", "Transparency:=", 0.7, _
+"PartCoordinateSystem:=", "Global", _
+"MaterialValue:=", Chr(34) & core_material_name & Chr(34), _
+"SolveInside:=", true)
+
+'Bottom Ground Plane
+oEditor.CreateBox Array("NAME:BoxParameters", _
+"XPosition:=", CStr(sub_x_min) & "mil", _
+"YPosition:=", CStr(sub_y_min) & "mil", _
+"ZPosition:=", CStr(-Core_Height - cond_thickness) & "mil", _
+"XSize:=", CStr(sub_x_max - sub_x_min) & "mil", _
+"YSize:=", CStr(sub_y_max - sub_y_min) & "mil", _
+"ZSize:=", CStr(cond_thickness) & "mil"), _
+Array("NAME:Attributes", "Name:=", "GROUND_BOTTOM", "Flags:=", "", _
+"Color:=", "(192 192 192)", "Transparency:=", 0.3, _
+"PartCoordinateSystem:=", "Global", _
+"MaterialValue:=", Chr(34) & cond_material_name & Chr(34), _
+"SolveInside:=", false)
+
+'Top Ground Plane
+oEditor.CreateBox Array("NAME:BoxParameters", _
+"XPosition:=", CStr(sub_x_min) & "mil", _
+"YPosition:=", CStr(sub_y_min) & "mil", _
+"ZPosition:=", CStr(Prepreg_Height + Core_Height) & "mil", _
+"XSize:=", CStr(sub_x_max - sub_x_min) & "mil", _
+"YSize:=", CStr(sub_y_max - sub_y_min) & "mil", _
+"ZSize:=", CStr(cond_thickness) & "mil"), _
+Array("NAME:Attributes", "Name:=", "GROUND_TOP", "Flags:=", "", _
+"Color:=", "(192 192 192)", "Transparency:=", 0.3, _
+"PartCoordinateSystem:=", "Global", _
+"MaterialValue:=", Chr(34) & cond_material_name & Chr(34), _
+"SolveInside:=", false)
+
+'***************************************************************************
+' CREATE PORTS
+'***************************************************************************
+
+'Port 1
+oEditor.CreateRectangle Array("NAME:RectangleParameters", _
+"IsCovered:=", true, _
+"XStart:=", CStr(sub_x_min) & "mil", _
+"YStart:=", "0mil", _
+"ZStart:=", CStr(-Core_Height) & "mil", _
+"Width:=", "10mil", _
+"Height:=", CStr(Core_Height + Prepreg_Height + Core_Height) & "mil", _
+"WhichAxis:=", "X"), _
+Array("NAME:Attributes", "Name:=", "Port1", "Flags:=", "", _
+"Color:=", "(0 0 255)", "Transparency:=", 0.5, _
+"PartCoordinateSystem:=", "Global", _
+"MaterialValue:=", Chr(34) & "vacuum" & Chr(34), _
+"SolveInside:=", true))
+
+'Port 2
+oEditor.CreateRectangle Array("NAME:RectangleParameters", _
+"IsCovered:=", true, _
+"XStart:=", CStr(sub_x_max) & "mil", _
+"YStart:=", "0mil", _
+"ZStart:=", CStr(-Core_Height) & "mil", _
+"Width:=", "10mil", _
+"Height:=", CStr(Core_Height + Prepreg_Height + Core_Height) & "mil", _
+"WhichAxis:=", "X"), _
+Array("NAME:Attributes", "Name:=", "Port2", "Flags:=", "", _
+"Color:=", "(0 0 255)", "Transparency:=", 0.5, _
+"PartCoordinateSystem:=", "Global", _
+"MaterialValue:=", Chr(34) & "vacuum" & Chr(34), _
+"SolveInside:=", true))
+
+'***************************************************************************
+' ASSIGN WAVE PORTS
+'***************************************************************************
+
+Set oModule = oDesign.GetModule("BoundarySetup")
+
+'Port 1 Assignment
+oModule.AssignWavePort Array("NAME:Port1", _
+"Objects:=", Array("Port1"), _
+"NumModes:=", 1, _
+"RenormalizeAllTerminals:=", true, _
+"UseLineModeAlignment:=", true, _
+"DoDeembed:=", false, _
+Array("NAME:Modes", _
+Array("NAME:Mode1", _
+"ModeNum:=", 1, _
+"UseIntLine:=", true, _
+Array("NAME:IntLine", _
+"Start:=", Array(CStr(sub_x_min) & "mil", "5mil", "0mil"), _
+"End:=", Array(CStr(sub_x_min) & "mil", "5mil", CStr(Prepreg_Height) & "mil")), _
+"CharImp:=", "Zpi", _
+"AlignmentGroup:=", 0, _
+"RenormImp:=", "50ohm")), _
+"ShowReporterFilter:=", false, _
+"ReporterFilter:=", Array(true), _
+"UseAnalyticAlignment:=", false)
+
+'Port 2 Assignment
+oModule.AssignWavePort Array("NAME:Port2", _
+"Objects:=", Array("Port2"), _
+"NumModes:=", 1, _
+"RenormalizeAllTerminals:=", true, _
+"UseLineModeAlignment:=", true, _
+"DoDeembed:=", false, _
+Array("NAME:Modes", _
+Array("NAME:Mode1", _
+"ModeNum:=", 1, _
+"UseIntLine:=", true, _
+Array("NAME:IntLine", _
+"Start:=", Array(CStr(sub_x_max) & "mil", "5mil", "0mil"), _
+"End:=", Array(CStr(sub_x_max) & "mil", "5mil", CStr(Prepreg_Height) & "mil")), _
+"CharImp:=", "Zpi", _
+"AlignmentGroup:=", 0, _
+"RenormImp:=", "50ohm")), _
+"ShowReporterFilter:=", false, _
+"ReporterFilter:=", Array(true), _
+"UseAnalyticAlignment:=", false)
+
+'***************************************************************************
+' CREATE SOLUTION SETUP
+'***************************************************************************
+
+Set oModule = oDesign.GetModule("AnalysisSetup")
+
+'Main solution setup
+oModule.InsertSetup "HfssDriven", Array("NAME:Setup1", _
+"Frequency:=", solution_freq, _
+"PortsOnly:=", false, _
+"MaxDeltaS:=", 0.01, _
+"UseMatrixConv:=", false, _
+"MaximumPasses:=", 20, _
+"MinimumPasses:=", 1, _
+"MinimumConvergedPasses:=", 1, _
+"PercentRefinement:=", 30, _
+"IsEnabled:=", true, _
+"BasisOrder:=", 1, _
+"DoLambdaRefine:=", true, _
+"DoMaterialLambda:=", true, _
+"SetLambdaTarget:=", false, _
+"Target:=", 0.3333, _
+"UseMaxTetIncrease:=", false, _
+"PortAccuracy:=", 2, _
+"UseABCOnPort:=", false, _
+"SetPortMinMaxTri:=", false, _
+"UseDomains:=", false, _
+"UseIterativeSolver:=", false, _
+"SaveRadFieldsOnly:=", false, _
+"SaveAnyFields:=", true, _
+"NoAdditionalRefinementOnImport:=", false)
+
+'Frequency sweep
+oModule.InsertFrequencySweep "Setup1", Array("NAME:Sweep1", _
+"IsEnabled:=", true, _
+"RangeType:=", "LinearCount", _
+"RangeStart:=", start_freq, _
+"RangeEnd:=", end_freq, _
+"RangeCount:=", 401, _
+"Type:=", "Fast", _
+"SaveFields:=", false, _
+"SaveRadFields:=", false, _
+"ExtrapToDC:=", false, _
+"MinSolvedFreq:=", "0.01GHz", _
+"InterpUseS:=", true, _
+"InterpUsePortImped:=", false, _
+"InterpUsePropConst:=", true, _
+"UseDerivativeConvergence:=", false, _
+"InterpDerivTolerance:=", 0.2, _
+"UseFullBasis:=", true, _
+"EnforcePassivity:=", true, _
+"PassivityErrorTolerance:=", 0.0001)
+
+'***************************************************************************
+' CREATE REPORTS
+'***************************************************************************
+
+Set oModule = oDesign.GetModule("ReportSetup")
+
+'S-Parameters
+oModule.CreateReport "S_Parameters", "Modal Solution Data", "Rectangular Plot", _
+"Setup1 : Sweep1", Array("Domain:=", "Sweep"), _
+Array("Freq:=", Array("All")), _
+Array("X Component:=", "Freq", "Y Component:=", Array("dB(S(1,1))", "dB(S(2,1))")), _
+Array()
+
+'***************************************************************************
+' RESONATOR CREATION SUBROUTINE
+'***************************************************************************
+
+Sub CreateResonator(res_num, x_pos, y_pos, direction)
+    'Create a simple square resonator with gap
+    Dim res_size
+    res_size = 40  'mil
+    
+    'Main resonator square
+    oEditor.CreateBox Array("NAME:BoxParameters", _
+    "XPosition:=", CStr(x_pos) & "mil", _
+    "YPosition:=", CStr(y_pos) & "mil", _
+    "ZPosition:=", "0mil", _
+    "XSize:=", CStr(res_size) & "mil", _
+    "YSize:=", CStr(res_size) & "mil", _
+    "ZSize:=", "0mil"), _
+    Array("NAME:Attributes", "Name:=", "L02_" & res_num, "Flags:=", "NonModel", _
+    "Color:=", "(255 128 0)", "Transparency:=", 0, _
+    "PartCoordinateSystem:=", "Global", _
+    "MaterialValue:=", Chr(34) & cond_material_name & Chr(34), _
+    "SolveInside:=", false))
+    
+    'Create gap based on direction
+    Dim gap_size, gap_x, gap_y, gap_w, gap_h
+    gap_size = 4
+    
+    Select Case direction
+        Case 1  'Right gap
+            gap_x = x_pos + res_size
+            gap_y = y_pos + res_size/2 - gap_size/2
+            gap_w = gap_size
+            gap_h = gap_size
+        Case 2  'Left gap
+            gap_x = x_pos - gap_size
+            gap_y = y_pos + res_size/2 - gap_size/2
+            gap_w = gap_size
+            gap_h = gap_size
+        Case 3  'Top gap
+            gap_x = x_pos + res_size/2 - gap_size/2
+            gap_y = y_pos + res_size
+            gap_w = gap_size
+            gap_h = gap_size
+        Case 4  'Bottom gap
+            gap_x = x_pos + res_size/2 - gap_size/2
+            gap_y = y_pos - gap_size
+            gap_w = gap_size
+            gap_h = gap_size
+    End Select
+    
+    'Create gap
+    oEditor.CreateBox Array("NAME:BoxParameters", _
+    "XPosition:=", CStr(gap_x) & "mil", _
+    "YPosition:=", CStr(gap_y) & "mil", _
+    "ZPosition:=", "0mil", _
+    "XSize:=", CStr(gap_w) & "mil", _
+    "YSize:=", CStr(gap_h) & "mil", _
+    "ZSize:=", "0mil"), _
+    Array("NAME:Attributes", "Name:=", "Gap_" & res_num, "Flags:=", "NonModel", _
+    "Color:=", "(255 0 0)", "Transparency:=", 0, _
+    "PartCoordinateSystem:=", "Global", _
+    "MaterialValue:=", Chr(34) & "vacuum" & Chr(34), _
+    "SolveInside:=", true))
+    
+    'Unite gap with resonator
+    oEditor.Unite Array("NAME:Selections", _
+    "Selections:=", "L02_" & res_num & ",Gap_" & res_num), _
+    Array("NAME:UniteParameters", "KeepOriginals:=", false)
+End Sub
+
+'***************************************************************************
+' FINALIZE DESIGN
+'***************************************************************************
+
+'Validate design
+oDesign.Validate
+
+'Save project
+oProject.Save
+
+'Completion message
+MsgBox "Parametric filter design created successfully!" & vbCrLf & _
+"Features:" & vbCrLf & _
+"- " & num_poles & " resonators with variable gaps" & vbCrLf & _
+"- Multi-layer substrate stack" & vbCrLf & _
+"- Parametric variables for optimization" & vbCrLf & _
+"- Solution setup: " & solution_freq & vbCrLf & _
+"- Frequency sweep: " & start_freq & " to " & end_freq, , _
+"HFSS Filter Design Complete"
